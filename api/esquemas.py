@@ -49,6 +49,13 @@ class CorridaSaida(BaseModel):
     custo_estimado: float | None = None
     no_origem: int
     no_destino: int
+    # Para o card da corrida no app: quem vem buscar, e onde.
+    motorista_nome: str | None = None
+    motorista_placa: str | None = None
+    motorista_modelo: str | None = None
+    passageiro_nome: str | None = None
+    origem: tuple[float, float] | None = None       # cruzamento de embarque
+    destino: tuple[float, float] | None = None
 
 
 class RotaSaida(BaseModel):

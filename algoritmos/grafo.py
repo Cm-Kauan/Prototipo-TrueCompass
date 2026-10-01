@@ -33,6 +33,7 @@ class Grafo:
         self._adjacencia = {}   # no -> {vizinho: peso}
         self._coordenadas = {}  # no -> (lat, lon)
         self._cache_reverso = None
+        self._cache_vmax = None
 
     # ---------------------------------------------------------------- escrita
 
@@ -40,6 +41,7 @@ class Grafo:
         self._adjacencia.setdefault(no, {})
         self._coordenadas[no] = (lat, lon)
         self._cache_reverso = None
+        self._cache_vmax = None
 
     def adicionar_aresta(self, origem, destino, peso):
         """Adiciona uma rua de mao unica (origem -> destino)."""
@@ -51,6 +53,7 @@ class Grafo:
         self._adjacencia.setdefault(origem, {})[destino] = peso
         self._adjacencia.setdefault(destino, {})
         self._cache_reverso = None
+        self._cache_vmax = None
 
     def adicionar_rua_mao_dupla(self, a, b, peso):
         self.adicionar_aresta(a, b, peso)
@@ -67,6 +70,9 @@ class Grafo:
         self._adjacencia[origem][destino] = novo_peso
         if self._cache_reverso is not None:
             self._cache_reverso._adjacencia[destino][origem] = novo_peso
+        # Peso menor pode elevar a velocidade maxima -- e com ela o divisor da
+        # heuristica. Manter o valor antigo deixaria h superestimar.
+        self._cache_vmax = None
 
     # ---------------------------------------------------------------- leitura
 
@@ -83,6 +89,33 @@ class Grafo:
 
     def total_arestas(self):
         return sum(len(v) for v in self._adjacencia.values())
+
+    def velocidade_maxima_kmh(self):
+        """Maior velocidade efetiva entre todas as arestas: distancia / peso.
+
+        E o divisor MAIS APERTADO que ainda deixa a heuristica admissivel: se
+        nenhuma aresta e percorrida mais rapido que v_max, nenhum caminho o e,
+        e linha_reta / v_max nunca superestima. Um teto fixo arriscaria os
+        dois erros: baixo demais (a malha real de SP tem marginal a 110 km/h,
+        acima dos 100 que estavam fixos) quebra a admissibilidade; alto demais
+        enfraquece h e o A* degenera em Dijkstra.
+
+        O(E), calculado uma vez e mantido em cache ate a proxima escrita.
+        Aresta de peso zero e comprimento positivo daria velocidade infinita:
+        devolve inf, e h vira 0 -- o A* recai com seguranca no Dijkstra.
+        """
+        if self._cache_vmax is None:
+            maxima = 0.0
+            for origem, saidas in self._adjacencia.items():
+                lat1, lon1 = self._coordenadas[origem]
+                for destino, peso in saidas.items():
+                    metros = haversine(lat1, lon1, *self._coordenadas[destino])
+                    if peso > 0:
+                        maxima = max(maxima, metros / peso)
+                    elif metros > 0:
+                        maxima = inf
+            self._cache_vmax = maxima * 3.6
+        return self._cache_vmax
 
     # ---------------------------------------------------------------- reverso
 
@@ -126,11 +159,12 @@ class Grafo:
                 reverso._adjacencia[destino][origem] = peso
 
         reverso._cache_reverso = self
+        reverso._cache_vmax = self._cache_vmax
         self._cache_reverso = reverso
         return reverso
 
 
-def heuristica_haversine(grafo, destino, velocidade_max_kmh):
+def heuristica_haversine(grafo, destino, velocidade_max_kmh=None):
     """Constroi h(v) para o A*, em segundos.
 
     h(v) = distancia_em_linha_reta(v, destino) / velocidade_maxima
@@ -142,7 +176,14 @@ def heuristica_haversine(grafo, destino, velocidade_max_kmh):
     Se voce esquecer de dividir pela velocidade, h vira "metros" enquanto os
     pesos sao "segundos": a heuristica superestima, deixa de ser admissivel
     e o A* passa a devolver rotas erradas. O teste-oraculo pega isso.
+
+    Sem `velocidade_max_kmh`, usa a velocidade maxima medida no proprio grafo
+    (ver Grafo.velocidade_maxima_kmh) -- o teto mais apertado e admissivel.
     """
+    if velocidade_max_kmh is None:
+        velocidade_max_kmh = grafo.velocidade_maxima_kmh()
+    if velocidade_max_kmh in (0, inf):
+        return lambda _no: 0.0
     velocidade_max_ms = velocidade_max_kmh / 3.6
     lat_d, lon_d = grafo.coordenadas(destino)
 

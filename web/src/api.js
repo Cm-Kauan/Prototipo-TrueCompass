@@ -15,7 +15,12 @@ export class ErroApi extends Error {
   }
 }
 
-async function pedir(caminho, { metodo = 'GET', corpo, token } = {}) {
+// Chamado quando uma requisição autenticada volta 401: token expirou e o app
+// precisa voltar ao login, em vez de cada tela tratar isso por conta própria.
+let aoExpirar = null
+export function definirAoExpirar(funcao) { aoExpirar = funcao }
+
+async function pedir(caminho, { metodo = 'GET', corpo, token, sinal } = {}) {
   const cabecalhos = {}
   if (corpo) cabecalhos['Content-Type'] = 'application/json'
   if (token) cabecalhos.Authorization = `Bearer ${token}`
@@ -26,10 +31,13 @@ async function pedir(caminho, { metodo = 'GET', corpo, token } = {}) {
       method: metodo,
       headers: cabecalhos,
       body: corpo ? JSON.stringify(corpo) : undefined,
+      signal: sinal,
     })
-  } catch {
+  } catch (falha) {
+    // Busca cancelada pelo próprio app (a pessoa continuou digitando).
+    if (falha.name === 'AbortError') throw falha
     // Falha de rede não tem status HTTP: o backend provavelmente não subiu.
-    throw new ErroApi('Não foi possível falar com o servidor. Ele está rodando?', 0)
+    throw new ErroApi('Sem conexão com o servidor. Ele está rodando?', 0)
   }
 
   if (resposta.status === 204) return null
@@ -39,6 +47,7 @@ async function pedir(caminho, { metodo = 'GET', corpo, token } = {}) {
   try { dados = texto ? JSON.parse(texto) : null } catch { dados = { detail: texto } }
 
   if (!resposta.ok) {
+    if (resposta.status === 401 && token) aoExpirar?.()
     throw new ErroApi(mensagemDeErro(dados, resposta.status), resposta.status)
   }
   return dados
@@ -62,10 +71,30 @@ export const api = {
   // ---- malha viária (público: geometria derivada de dado aberto)
   infoDaMalha: () => pedir('/malha/info'),
   semaforos: () => pedir('/malha/semaforos'),
-  trechos: (caixa, limite = 6000) => {
+  trechos: (caixa, limite = 6000, sinal) => {
     const q = new URLSearchParams({ ...caixa, limite })
-    return pedir(`/malha/trechos?${q}`)
+    return pedir(`/malha/trechos?${q}`, { sinal })
   },
+
+  // ---- lugares reais (Photon / Nominatim, via backend)
+  buscarLugares: (token, texto, { perto, completo = false, sinal } = {}) => {
+    const q = new URLSearchParams({ q: texto, completo })
+    if (perto) { q.set('lat', perto.lat); q.set('lon', perto.lon) }
+    return pedir(`/lugares/buscar?${q}`, { token, sinal })
+  },
+  enderecoDoPonto: (token, lat, lon, sinal) =>
+    pedir(`/lugares/reverso?${new URLSearchParams({ lat, lon })}`, { token, sinal }),
+
+  // ---- prévia da viagem: A* real entre os dois endereços
+  estimar: (token, origem, destino, sinal) =>
+    pedir('/viagens/estimativa', {
+      metodo: 'POST', token, sinal,
+      corpo: {
+        origem_lat: origem.lat, origem_lon: origem.lon,
+        destino_lat: destino.lat, destino_lon: destino.lon,
+        comparar: true,
+      },
+    }),
 
   // ---- motorista
   enviarPosicao: (token, lat, lon) =>
@@ -74,8 +103,14 @@ export const api = {
     pedir('/motoristas/disponibilidade', { metodo: 'POST', corpo: { disponivel }, token }),
 
   // ---- corrida
-  pedirCorrida: (token, coords) =>
-    pedir('/corridas', { metodo: 'POST', corpo: coords, token }),
+  pedirCorrida: (token, origem, destino) =>
+    pedir('/corridas', {
+      metodo: 'POST', token,
+      corpo: {
+        origem_lat: origem.lat, origem_lon: origem.lon,
+        destino_lat: destino.lat, destino_lon: destino.lon,
+      },
+    }),
   consultarCorrida: (token, id) => pedir(`/corridas/${id}`, { token }),
   rotaDaCorrida: (token, id) => pedir(`/corridas/${id}/rota`, { token }),
   rotaDoMotorista: (token, id) => pedir(`/corridas/${id}/rota-motorista`, { token }),

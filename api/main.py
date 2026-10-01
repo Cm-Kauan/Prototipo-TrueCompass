@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from algoritmos.indice_espacial import indice_dos_nos
 from api.conexoes import GerenciadorConexoes
-from api.rotas import auth, corridas, malha, motoristas, ws
+from api.rotas import auth, corridas, lugares, malha, motoristas, viagens, ws
 from dominio.estados import validar_dag
 from dominio.registro import RegistroMotoristas
 from infra.banco import criar_tabelas
@@ -25,19 +25,29 @@ registrador = logging.getLogger("truecompass")
 def carregar_malha(config):
     """Decide a fonte do mapa, nesta ordem de preferencia.
 
-    1. MATRIZ (`mapas/*.mapa`) -- editavel a mao, versionavel em diff, carrega
-       semaforos. E a fonte de autoria do projeto.
-    2. Artefato do OpenStreetMap (`dados/malha.json`), gerado offline pelo CLI.
+    1. Artefato do OpenStreetMap (`dados/malha.json`), gerado offline pelo
+       CLI -- ruas REAIS de Sao Paulo, com mao unica e semaforos do OSM. E o
+       que permite buscar um endereco de verdade e rotear ate ele.
+    2. MATRIZ (`mapas/*.mapa`) -- editavel a mao, boa para experimentos
+       didaticos. Para usa-la com o artefato presente: `MALHA_ARQUIVO=`.
     3. Cidade sintetica, apenas para nao travar o desenvolvimento.
 
     O servidor NUNCA consulta a Overpass no boot: seria lento, fragil e abuso
     de um servico publico.
 
-    Devolve (grafo, matriz_ou_None). A matriz e guardada porque o grafo nao
-    carrega os semaforos -- eles ja foram absorvidos pelos pesos das arestas,
-    e a matriz e quem sabe onde cada um esta, para o front desenhar.
+    Devolve (grafo, matriz_ou_None, semaforos). Os semaforos vao a parte
+    porque o grafo nao os carrega -- o atraso ja foi absorvido pelos pesos
+    das arestas; a lista serve para o front desenhar.
     """
-    if os.path.exists(config.arquivo_matriz):
+    if config.arquivo_malha and os.path.exists(config.arquivo_malha):
+        from infra.osm import ler_artefato
+        grafo, semaforos = ler_artefato(config.arquivo_malha)
+        registrador.info("malha do OpenStreetMap: %s (%d nos, %d arestas, %d semaforos)",
+                         config.arquivo_malha, len(grafo.nos), grafo.total_arestas(),
+                         len(semaforos))
+        return grafo, None, semaforos
+
+    if config.arquivo_matriz and os.path.exists(config.arquivo_matriz):
         from algoritmos.matriz_mapa import MatrizMapa
         with open(config.arquivo_matriz, encoding="utf-8") as arquivo:
             matriz = MatrizMapa.de_texto(arquivo.read())
@@ -49,21 +59,42 @@ def carregar_malha(config):
             len(grafo.nos), grafo.total_arestas(), dados["semaforos"],
             "" if config.considerar_semaforos else " IGNORADOS",
         )
-        return grafo, matriz
-
-    if os.path.exists(config.arquivo_malha):
-        from infra.osm import carregar_grafo
-        grafo = carregar_grafo(config.arquivo_malha)
-        registrador.info("malha do OpenStreetMap: %s (%d nos, %d arestas)",
-                         config.arquivo_malha, len(grafo.nos), grafo.total_arestas())
-        return grafo, None
+        return grafo, matriz, semaforos_da_matriz(matriz)
 
     from algoritmos.cidade_exemplo import construir_cidade
     registrador.warning(
         "nem %s nem %s encontrados: subindo com a CIDADE SINTETICA.",
-        config.arquivo_matriz, config.arquivo_malha,
+        config.arquivo_malha, config.arquivo_matriz,
     )
-    return construir_cidade(lado=40), None
+    return construir_cidade(lado=40), None, []
+
+
+def semaforos_da_matriz(matriz):
+    """Cruzamentos semaforizados da matriz, no formato de /malha/semaforos."""
+    saida = []
+    for i in range(matriz.altura):
+        for j in range(matriz.largura):
+            sinal = matriz.semaforo_de(i, j)
+            if sinal is None:
+                continue
+            lat, lon = matriz.coordenadas(i, j)
+            saida.append({
+                "lat": round(lat, 6), "lon": round(lon, 6),
+                "vermelho": sinal.vermelho, "ciclo": sinal.ciclo,
+                "atraso_medio": round(sinal.atraso, 2),
+            })
+    return saida
+
+
+def caixa_da_malha(grafo):
+    """Retangulo envolvente da malha: limita a busca de lugares a area em que
+    o A* tem rua para chegar."""
+    latitudes = [grafo.coordenadas(no)[0] for no in grafo.nos]
+    longitudes = [grafo.coordenadas(no)[1] for no in grafo.nos]
+    if not latitudes:
+        return None
+    return {"sul": min(latitudes), "oeste": min(longitudes),
+            "norte": max(latitudes), "leste": max(longitudes)}
 
 
 @asynccontextmanager
@@ -80,10 +111,18 @@ async def ciclo_de_vida(app: FastAPI):
     #    pelo tempo de vida do processo. Reconstruir por requisicao seria
     #    inviavel -- e e por isso que este backend precisa de processo
     #    persistente (Railway), e nao de funcoes serverless.
-    app.state.grafo, app.state.matriz = carregar_malha(config)
+    app.state.grafo, app.state.matriz, app.state.semaforos = carregar_malha(config)
     app.state.grafo.reverso()
     app.state.indice_nos = indice_dos_nos(app.state.grafo)
-    registrador.info("grafo reverso e indice espacial prontos")
+    app.state.caixa = caixa_da_malha(app.state.grafo)
+    # Cruzamentos semaforizados, para contar os sinais de cada rota.
+    app.state.nos_semaforizados = frozenset(
+        app.state.indice_nos.mais_proximo(s["lat"], s["lon"])
+        for s in app.state.semaforos
+    )
+    registrador.info("grafo reverso e indice espacial prontos "
+                     "(velocidade maxima medida: %.0f km/h)",
+                     app.state.grafo.velocidade_maxima_kmh())
 
     app.state.registro = RegistroMotoristas()
     app.state.conexoes = GerenciadorConexoes()
@@ -111,7 +150,7 @@ def criar_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for modulo in (auth, motoristas, corridas, malha, ws):
+    for modulo in (auth, motoristas, corridas, malha, lugares, viagens, ws):
         app.include_router(modulo.rotas)
 
     @app.get("/saude", tags=["infra"])

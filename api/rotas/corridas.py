@@ -35,6 +35,23 @@ def _carregar(sessao, corrida_id, usuario):
     return corrida
 
 
+def _saida(sessao, corrida, grafo):
+    """CorridaSaida com o que o app mostra no card: nomes, placa, pontos."""
+    saida = CorridaSaida.model_validate(corrida, from_attributes=True)
+    passageiro = sessao.get(Usuario, corrida.passageiro_id)
+    saida.passageiro_nome = passageiro.nome if passageiro else None
+    if corrida.motorista_id is not None:
+        motorista = sessao.get(Motorista, corrida.motorista_id)
+        if motorista is not None:
+            saida.motorista_placa = motorista.placa
+            saida.motorista_modelo = motorista.modelo or None
+            saida.motorista_nome = motorista.usuario.nome if motorista.usuario else None
+    for campo, no in (("origem", corrida.no_origem), ("destino", corrida.no_destino)):
+        if no in grafo.nos:
+            setattr(saida, campo, grafo.coordenadas(no))
+    return saida
+
+
 def _transitar_ou_409(sessao, corrida, novo_estado):
     """Traduz a recusa do DAG em resposta HTTP.
 
@@ -85,14 +102,14 @@ def pedir_corrida(dados: CorridaEntrada,
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(erro))
 
     comitar_e_publicar(sessao, conexoes, corrida)
-    return CorridaSaida.model_validate(corrida, from_attributes=True)
+    return _saida(sessao, corrida, grafo)
 
 
 @rotas.get("/{corrida_id}", response_model=CorridaSaida)
 def consultar(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
-              sessao: Session = Depends(obter_sessao)):
-    return CorridaSaida.model_validate(_carregar(sessao, corrida_id, usuario),
-                                       from_attributes=True)
+              sessao: Session = Depends(obter_sessao),
+              grafo=Depends(obter_grafo)):
+    return _saida(sessao, _carregar(sessao, corrida_id, usuario), grafo)
 
 
 @rotas.get("/{corrida_id}/rota", response_model=RotaSaida)
@@ -143,29 +160,32 @@ def obter_rota_do_motorista(corrida_id: int,
 @rotas.post("/{corrida_id}/iniciar", response_model=CorridaSaida)
 def iniciar(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
             sessao: Session = Depends(obter_sessao),
-            conexoes=Depends(obter_conexoes)):
+            conexoes=Depends(obter_conexoes),
+            grafo=Depends(obter_grafo)):
     corrida = _carregar(sessao, corrida_id, usuario)
     _transitar_ou_409(sessao, corrida, E.EM_CURSO)
     comitar_e_publicar(sessao, conexoes, corrida)
-    return CorridaSaida.model_validate(corrida, from_attributes=True)
+    return _saida(sessao, corrida, grafo)
 
 
 @rotas.post("/{corrida_id}/finalizar", response_model=CorridaSaida)
 def finalizar(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
               sessao: Session = Depends(obter_sessao),
               registro=Depends(obter_registro),
-              conexoes=Depends(obter_conexoes)):
+              conexoes=Depends(obter_conexoes),
+              grafo=Depends(obter_grafo)):
     corrida = _carregar(sessao, corrida_id, usuario)
     _transitar_ou_409(sessao, corrida, E.CONCLUIDA)
     servico.liberar_motorista(sessao, registro, corrida.motorista_id)
     comitar_e_publicar(sessao, conexoes, corrida)
-    return CorridaSaida.model_validate(corrida, from_attributes=True)
+    return _saida(sessao, corrida, grafo)
 
 
 @rotas.post("/{corrida_id}/pagamento", response_model=CorridaSaida)
 def pagar(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
           sessao: Session = Depends(obter_sessao),
-          conexoes=Depends(obter_conexoes)):
+          conexoes=Depends(obter_conexoes),
+          grafo=Depends(obter_grafo)):
     """Só alcancavel a partir de `concluida` -- garantido pelo DAG, nao por `if`."""
     corrida = _carregar(sessao, corrida_id, usuario)
     try:
@@ -173,16 +193,17 @@ def pagar(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
     except E.TransicaoInvalida as erro:
         raise HTTPException(status.HTTP_409_CONFLICT, str(erro))
     comitar_e_publicar(sessao, conexoes, corrida)
-    return CorridaSaida.model_validate(corrida, from_attributes=True)
+    return _saida(sessao, corrida, grafo)
 
 
 @rotas.post("/{corrida_id}/cancelar", response_model=CorridaSaida)
 def cancelar(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
              sessao: Session = Depends(obter_sessao),
              registro=Depends(obter_registro),
-             conexoes=Depends(obter_conexoes)):
+             conexoes=Depends(obter_conexoes),
+             grafo=Depends(obter_grafo)):
     corrida = _carregar(sessao, corrida_id, usuario)
     _transitar_ou_409(sessao, corrida, E.CANCELADA)
     servico.liberar_motorista(sessao, registro, corrida.motorista_id)
     comitar_e_publicar(sessao, conexoes, corrida)
-    return CorridaSaida.model_validate(corrida, from_attributes=True)
+    return _saida(sessao, corrida, grafo)

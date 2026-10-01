@@ -13,8 +13,9 @@ import os
 import time
 
 from algoritmos.busca import busca_caminho_minimo
-from infra.osm import (baixar_osm, construir_grafo,
-                       maior_componente_fortemente_conexo, salvar_grafo)
+from infra.osm import (SEMAFORO_OSM, baixar_osm, construir_grafo,
+                       maior_componente_fortemente_conexo, salvar_grafo,
+                       semaforos_do_osm)
 
 
 def estatisticas(grafo):
@@ -79,7 +80,12 @@ def main():
     )
     print("  verificado: malha fortemente conexa")
 
-    salvar_grafo(podado, args.saida)
+    sinais = semaforos_do_osm(dados)
+    mantidos = sum(1 for no in sinais if no in set(podado.nos))
+    print(f"  semaforos:  {mantidos:,} na malha "
+          f"(+{SEMAFORO_OSM.atraso:.1f}s esperados em cada aresta que chega)")
+
+    salvar_grafo(podado, args.saida, semaforos=sinais)
     print(f"Artefato: {args.saida} "
           f"({os.path.getsize(args.saida) / 1_048_576:.1f} MB)")
 

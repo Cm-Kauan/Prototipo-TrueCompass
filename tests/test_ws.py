@@ -270,6 +270,9 @@ def main():
                 falhas += 1
                 print(f"  FALHA {teste.__name__}: {str(erro)[:150]}")
     print(f"\n{len(testes) - falhas}/{len(testes)} testes passaram")
+    # No Windows o arquivo segue aberto enquanto o pool do engine existir.
+    from infra.banco import engine
+    engine.dispose()
     os.unlink(_BANCO.name)
     return 1 if falhas else 0
 

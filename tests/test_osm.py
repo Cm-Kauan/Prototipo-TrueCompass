@@ -17,10 +17,10 @@ from math import isclose
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from algoritmos.grafo import haversine
-from infra.osm import (VELOCIDADE_PADRAO, _sentidos, _velocidade_kmh,
-                       carregar_grafo, construir_grafo,
-                       maior_componente_fortemente_conexo, montar_consulta,
-                       salvar_grafo)
+from infra.osm import (SEMAFORO_OSM, VELOCIDADE_PADRAO, _sentidos,
+                       _velocidade_kmh, carregar_grafo, construir_grafo,
+                       ler_artefato, maior_componente_fortemente_conexo,
+                       montar_consulta, salvar_grafo, semaforos_do_osm)
 
 COORD = {
     1: (-23.5500, -46.6400), 2: (-23.5500, -46.6390),
@@ -167,6 +167,59 @@ def test_serializacao_preserva_o_grafo():
         assert lido.coordenadas(origem) == original.coordenadas(origem)
         for destino, p in original.vizinhos(origem):
             assert isclose(peso(lido, origem, destino), p, abs_tol=1e-3)
+
+
+# -------------------------------------------------------------- semaforos
+
+def _com_semaforo_no(no):
+    """O fixture, com o no `no` etiquetado highway=traffic_signals."""
+    elementos = [dict(e) for e in FIXTURE["elements"]]
+    for e in elementos:
+        if e["type"] == "node" and e["id"] == no:
+            e["tags"] = {"highway": "traffic_signals"}
+    return {"elements": elementos}
+
+
+def test_semaforo_soma_atraso_so_na_aresta_que_chega():
+    """1 <-> 2 e mao dupla; o sinal esta em 2. Quem CHEGA em 2 espera, quem
+    sai de 2 nao -- e ali que se para."""
+    sem, com = grafo_bruto(), construir_grafo(_com_semaforo_no(2))
+    assert isclose(peso(com, 1, 2), peso(sem, 1, 2) + SEMAFORO_OSM.atraso, abs_tol=1e-9)
+    assert isclose(peso(com, 2, 1), peso(sem, 2, 1), abs_tol=1e-9)
+
+
+def test_semaforo_none_ignora_os_sinais():
+    sem = grafo_bruto()
+    ignorado = construir_grafo(_com_semaforo_no(2), semaforo=None)
+    assert isclose(peso(ignorado, 1, 2), peso(sem, 1, 2), abs_tol=1e-9)
+
+
+def test_atraso_presumido_segue_a_formula():
+    """E[espera] = r^2 / (2c), com r = 40s e c = 90s."""
+    assert isclose(SEMAFORO_OSM.atraso, 40 ** 2 / (2 * 90))
+
+
+def test_artefato_leva_os_semaforos_que_sobreviveram_a_poda():
+    """O sinal no fragmento solto (no 6) some junto com o fragmento."""
+    dados = _com_semaforo_no(2)
+    for e in dados["elements"]:
+        if e["type"] == "node" and e["id"] == 6:
+            e["tags"] = {"highway": "traffic_signals"}
+    podado = maior_componente_fortemente_conexo(construir_grafo(dados))
+    with tempfile.TemporaryDirectory() as pasta:
+        caminho = os.path.join(pasta, "malha.json")
+        salvar_grafo(podado, caminho, semaforos=semaforos_do_osm(dados))
+        _grafo, semaforos = ler_artefato(caminho)
+    assert [(s["lat"], s["lon"]) for s in semaforos] == [COORD[2]]
+    assert isclose(semaforos[0]["atraso_medio"], round(SEMAFORO_OSM.atraso, 2))
+
+
+def test_artefato_antigo_sem_semaforos_ainda_carrega():
+    with tempfile.TemporaryDirectory() as pasta:
+        caminho = os.path.join(pasta, "malha.json")
+        salvar_grafo(grafo_bruto(), caminho)
+        grafo, semaforos = ler_artefato(caminho)
+    assert semaforos == [] and len(grafo.nos) == len(grafo_bruto().nos)
 
 
 # -------------------------------------------------------------------- consulta

@@ -60,3 +60,12 @@ def motorista_atual(usuario: Usuario = Depends(usuario_atual),
 
 def config():
     return obter_config()
+
+
+def obter_caixa(conexao: HTTPConnection):
+    """Retangulo envolvente da malha, calculado no boot."""
+    return getattr(conexao.app.state, "caixa", None)
+
+
+def obter_nos_semaforizados(conexao: HTTPConnection):
+    return getattr(conexao.app.state, "nos_semaforizados", frozenset())

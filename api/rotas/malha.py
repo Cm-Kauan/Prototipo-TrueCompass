@@ -11,6 +11,7 @@ sem qualquer informacao de usuario.
 """
 
 from fastapi import APIRouter, Depends, Query
+from starlette.requests import HTTPConnection
 
 from api.deps import obter_grafo, obter_matriz
 
@@ -40,32 +41,16 @@ def info(grafo=Depends(obter_grafo)):
 
 
 @rotas.get("/semaforos")
-def semaforos(matriz=Depends(obter_matriz)):
+def semaforos(conexao: HTTPConnection):
     """Cruzamentos semaforizados, para o front desenhar.
 
-    Vem da matriz, e nao do grafo: o atraso ja foi absorvido pelos pesos das
-    arestas e nao e mais recuperavel a partir deles. Quem sabe onde cada sinal
-    esta e a matriz.
-
-    Lista vazia quando a malha veio do OpenStreetMap, que nao traz temporizacao
-    semaforica utilizavel.
+    Lista montada no boot: da matriz, ou dos nos `highway=traffic_signals` do
+    OpenStreetMap. Nao sai do grafo porque o atraso ja foi absorvido pelos
+    pesos das arestas e nao e mais recuperavel a partir deles.
     """
-    if matriz is None:
-        return {"semaforos": [], "total": 0, "fonte": "openstreetmap"}
-
-    saida = []
-    for i in range(matriz.altura):
-        for j in range(matriz.largura):
-            sinal = matriz.semaforo_de(i, j)
-            if sinal is None:
-                continue
-            lat, lon = matriz.coordenadas(i, j)
-            saida.append({
-                "lat": round(lat, 6), "lon": round(lon, 6),
-                "vermelho": sinal.vermelho, "ciclo": sinal.ciclo,
-                "atraso_medio": round(sinal.atraso, 2),
-            })
-    return {"semaforos": saida, "total": len(saida), "fonte": "matriz"}
+    lista = getattr(conexao.app.state, "semaforos", [])
+    fonte = "matriz" if obter_matriz(conexao) is not None else "openstreetmap"
+    return {"semaforos": lista, "total": len(lista), "fonte": fonte}
 
 
 @rotas.get("/trechos")

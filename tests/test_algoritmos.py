@@ -242,6 +242,61 @@ def test_alvo_inalcancavel_e_reportado():
 
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Velocidade maxima medida: o divisor da heuristica vem do proprio grafo
+# --------------------------------------------------------------------------
+
+def _grafo_com_via_rapida():
+    """Linha 0-1-2-3 a 30 km/h, mais um atalho 0 -> 3 a 110 km/h."""
+    from algoritmos.grafo import haversine
+    g = Grafo()
+    pontos = [(-23.55, -46.64 + 0.003 * i) for i in range(4)]
+    for i, (lat, lon) in enumerate(pontos):
+        g.adicionar_no(i, lat, lon)
+    for i in range(3):
+        metros = haversine(*pontos[i], *pontos[i + 1])
+        g.adicionar_rua_mao_dupla(i, i + 1, metros / (30 / 3.6))
+    g.adicionar_aresta(0, 3, haversine(*pontos[0], *pontos[3]) / (110 / 3.6))
+    return g
+
+
+def test_velocidade_maxima_e_a_da_aresta_mais_rapida():
+    assert isclose(_grafo_com_via_rapida().velocidade_maxima_kmh(), 110, rel_tol=1e-9)
+
+
+def test_teto_fixo_baixo_superestima_e_o_medido_nao():
+    """A malha real de SP tem trecho a 110 km/h. Com teto fixo de 100, h(0)
+    passa do custo verdadeiro -- heuristica inadmissivel. Com o teto medido,
+    h nunca passa, em nenhum no."""
+    g = _grafo_com_via_rapida()
+    verdade = busca_caminho_minimo(g.reverso(), 3, set()).distancias
+    fixo = heuristica_haversine(g, 3, 100.0)
+    assert fixo(0) > verdade[0], "o teto de 100 deveria superestimar aqui"
+    medido = heuristica_haversine(g, 3)
+    for no in g.nos:
+        assert medido(no) <= verdade[no] + 1e-9
+
+
+def test_atualizar_peso_recalcula_a_velocidade_maxima():
+    """Esquecer de invalidar o cache deixaria h superestimar depois de uma
+    rua ficar mais rapida."""
+    g = _grafo_com_via_rapida()
+    antes = g.velocidade_maxima_kmh()
+    g.atualizar_peso(0, 1, dict(g.vizinhos(0))[1] / 10)   # 30 -> 300 km/h
+    assert g.velocidade_maxima_kmh() > antes
+
+
+def test_astar_com_teto_medido_concorda_com_dijkstra():
+    rng = random.Random(11)
+    nos = sorted(CIDADE.nos)
+    for _ in range(100):
+        origem, destino = rng.sample(nos, 2)
+        dijkstra = busca_caminho_minimo(CIDADE, origem, {destino})
+        astar = busca_caminho_minimo(CIDADE, origem, {destino},
+                                     h=heuristica_haversine(CIDADE, destino))
+        assert isclose(astar.custos[destino], dijkstra.custos[destino], abs_tol=1e-9)
+
+
 def main():
     testes = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     falhas = 0

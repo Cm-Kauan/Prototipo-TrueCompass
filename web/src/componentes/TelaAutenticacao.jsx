@@ -1,16 +1,39 @@
-import { useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { vibrar } from '../util'
+import { Botao } from './Basicos'
 import { Bussola } from './Bussola'
+import { Aviso } from './Sobreposicoes'
+import { Icone } from './Icone'
 
-export function TelaAutenticacao({ aoEntrar }) {
+function Campo({ id, rotulo, ...props }) {
+  return (
+    <motion.div className="campo" layout="position"
+                initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }} transition={{ type: 'spring', stiffness: 380, damping: 34 }}>
+      <input id={id} placeholder=" " {...props} />
+      <label htmlFor={id}>{rotulo}</label>
+    </motion.div>
+  )
+}
+
+export function TelaAutenticacao({ aoEntrar, falhaBackend }) {
   const [modo, definirModo] = useState('entrar')
   const [tipo, definirTipo] = useState('passageiro')
   const [nome, definirNome] = useState('')
   const [email, definirEmail] = useState('')
   const [senha, definirSenha] = useState('')
   const [placa, definirPlaca] = useState('')
+  const [modelo, definirModelo] = useState('')
   const [erro, definirErro] = useState(null)
   const [enviando, definirEnviando] = useState(false)
+  // A agulha gira até "achar o norte" quando a tela abre.
+  const [rumo, definirRumo] = useState(null)
+  useEffect(() => {
+    const ids = [setTimeout(() => definirRumo(250), 350), setTimeout(() => definirRumo(0), 1100)]
+    return () => ids.forEach(clearTimeout)
+  }, [])
 
   const registrando = modo === 'registrar'
 
@@ -23,10 +46,13 @@ export function TelaAutenticacao({ aoEntrar }) {
         ? await api.registrar({
             nome, email, senha, tipo,
             placa: tipo === 'motorista' ? placa : undefined,
+            modelo: tipo === 'motorista' ? modelo : undefined,
           })
         : await api.entrar(email, senha)
+      vibrar([15, 40, 15])
       aoEntrar(sessao)
     } catch (falha) {
+      vibrar([40, 30, 40])
       definirErro(falha.message)
     } finally {
       definirEnviando(false)
@@ -35,74 +61,86 @@ export function TelaAutenticacao({ aoEntrar }) {
 
   return (
     <div className="tela-entrada">
-      <form className="caixa-entrada cartao" onSubmit={enviar}>
-        <div className="cabecalho-entrada">
-          <Bussola tamanho={86} />
-          <div className="marca" style={{ marginTop: 10 }}>
-            <span><b>True</b><i>Compass</i></span>
-          </div>
-          <div className="subtitulo">Sua corrida, no caminho certo.</div>
+      <motion.div className="entrada-heroi" initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 200, damping: 22 }}>
+        <Bussola rumo={rumo} tamanho={104} />
+        <div className="marca"><b>True</b><i>Compass</i></div>
+        <div className="subtitulo">Sua corrida, no caminho certo.</div>
+      </motion.div>
+
+      <motion.form className="entrada-form" onSubmit={enviar}
+                   initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }}
+                   transition={{ delay: 0.12, type: 'spring', stiffness: 220, damping: 26 }}>
+        <div className="segmentado" role="tablist">
+          {[['entrar', 'Entrar'], ['registrar', 'Criar conta']].map(([chave, rotulo]) => (
+            <button key={chave} type="button" role="tab" aria-selected={modo === chave}
+                    className={modo === chave ? 'ativo' : ''}
+                    onClick={() => { vibrar(6); definirModo(chave); definirErro(null) }}>
+              {modo === chave && <motion.span layoutId="segmento" className="segmento-fundo"
+                                              transition={{ type: 'spring', stiffness: 500, damping: 36 }} />}
+              <span>{rotulo}</span>
+            </button>
+          ))}
         </div>
 
-        {registrando && (
-          <>
-            <div className="campo">
-              <label htmlFor="tipo">Entrar como</label>
-              <select id="tipo" value={tipo} onChange={(e) => definirTipo(e.target.value)}>
-                <option value="passageiro">Passageiro</option>
-                <option value="motorista">Motorista</option>
-              </select>
-            </div>
-            <div className="campo">
-              <label htmlFor="nome">Nome</label>
-              <input id="nome" value={nome} required minLength={2}
-                     onChange={(e) => definirNome(e.target.value)} />
-            </div>
-          </>
-        )}
+        {falhaBackend && <Aviso tipo="erro">{falhaBackend}</Aviso>}
 
-        <div className="campo">
-          <label htmlFor="email">E-mail</label>
-          <input id="email" type="email" value={email} required
-                 autoComplete="username"
+        <AnimatePresence initial={false}>
+          {registrando && (
+            <motion.div key="perfil" className="perfis"
+                        initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}>
+              {[['passageiro', 'usuario', 'Passageiro', 'Peço corridas'],
+                ['motorista', 'carro', 'Motorista', 'Faço corridas']].map(([chave, icone, titulo, nota]) => (
+                <motion.button key={chave} type="button" whileTap={{ scale: 0.96 }}
+                               className={`perfil ${tipo === chave ? 'ativo' : ''}`}
+                               onClick={() => { vibrar(6); definirTipo(chave) }}>
+                  <Icone nome={icone} tamanho={24} />
+                  <b>{titulo}</b><small>{nota}</small>
+                  {tipo === chave && (
+                    <motion.span className="perfil-check" layoutId="perfil-check">
+                      <Icone nome="check" tamanho={12} traco={3.4} />
+                    </motion.span>
+                  )}
+                </motion.button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
+          {registrando && (
+            <Campo key="nome" id="nome" rotulo="Nome" value={nome} required minLength={2}
+                   autoComplete="name" onChange={(e) => definirNome(e.target.value)} />
+          )}
+          <Campo key="email" id="email" rotulo="E-mail" type="email" value={email} required
+                 autoComplete="username" inputMode="email"
                  onChange={(e) => definirEmail(e.target.value)} />
-        </div>
-
-        <div className="campo">
-          <label htmlFor="senha">Senha</label>
-          <input id="senha" type="password" value={senha} required minLength={8}
+          <Campo key="senha" id="senha" rotulo="Senha" type="password" value={senha} required minLength={8}
                  autoComplete={registrando ? 'new-password' : 'current-password'}
                  onChange={(e) => definirSenha(e.target.value)} />
-        </div>
+          {registrando && tipo === 'motorista' && (
+            <Campo key="placa" id="placa" rotulo="Placa" value={placa} required maxLength={10}
+                   autoCapitalize="characters" onChange={(e) => definirPlaca(e.target.value.toUpperCase())} />
+          )}
+          {registrando && tipo === 'motorista' && (
+            <Campo key="modelo" id="modelo" rotulo="Modelo do carro" value={modelo} maxLength={60}
+                   onChange={(e) => definirModelo(e.target.value)} />
+          )}
+        </AnimatePresence>
 
-        {registrando && tipo === 'motorista' && (
-          <div className="campo">
-            <label htmlFor="placa">Placa</label>
-            <input id="placa" value={placa} required maxLength={10}
-                   onChange={(e) => definirPlaca(e.target.value.toUpperCase())} />
-          </div>
-        )}
+        <AnimatePresence>{erro && <Aviso tipo="erro">{erro}</Aviso>}</AnimatePresence>
 
-        {erro && <div className="aviso erro" role="alert">{erro}</div>}
-
-        <button className="botao" type="submit" disabled={enviando}>
-          {enviando ? 'Aguarde…' : registrando ? 'Criar conta' : 'Entrar'}
-        </button>
-
-        <div className="rodape-entrada">
-          {registrando ? 'Já tem conta? ' : 'Ainda não tem conta? '}
-          <button type="button" onClick={() => { definirModo(registrando ? 'entrar' : 'registrar'); definirErro(null) }}>
-            {registrando ? 'Entrar' : 'Criar agora'}
-          </button>
-        </div>
+        <Botao type="submit" carregando={enviando} onClick={undefined}>
+          {registrando ? 'Criar conta' : 'Entrar'}
+        </Botao>
 
         {registrando && (
-          <div className="tenue" style={{ marginTop: 10 }}>
-            A senha precisa de no mínimo 8 caracteres. Ela é guardada com bcrypt —
-            o servidor nunca armazena a senha em texto.
-          </div>
+          <p className="texto-apoio">
+            Mínimo de 8 caracteres. A senha é guardada com bcrypt — o servidor nunca a armazena em texto.
+          </p>
         )}
-      </form>
+      </motion.form>
     </div>
   )
 }

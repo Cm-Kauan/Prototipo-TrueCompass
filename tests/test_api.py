@@ -371,6 +371,103 @@ def test_caixa_vazia_devolve_lista_vazia():
     assert dados["trechos"] == [] and dados["truncado"] is False
 
 
+
+# ------------------------------------------------------ previa da viagem
+
+def estimar(token, comparar=False, origem=ORIGEM, destino=DESTINO):
+    return cliente.post("/viagens/estimativa", json={
+        "origem_lat": origem[0], "origem_lon": origem[1],
+        "destino_lat": destino[0], "destino_lon": destino[1], "comparar": comparar,
+    }, headers=cabecalho(token))
+
+
+def test_estimativa_exige_login():
+    assert cliente.post("/viagens/estimativa", json={
+        "origem_lat": ORIGEM[0], "origem_lon": ORIGEM[1],
+        "destino_lat": DESTINO[0], "destino_lon": DESTINO[1]}).status_code == 401
+
+
+def test_estimativa_traz_rota_preco_e_oraculo():
+    resposta = estimar(novo_passageiro(), comparar=True)
+    assert resposta.status_code == 200, resposta.text
+    dados = resposta.json()
+    assert len(dados["pontos"]) > 2 and dados["segundos"] > 0 and dados["metros"] > 0
+    assert dados["custo_estimado"] > 5.0                     # acima da tarifa base
+    algoritmo = dados["algoritmo"]
+    assert algoritmo["dijkstra"]["mesmo_custo"] is True
+    assert (algoritmo["a_estrela"]["nos_expandidos"]
+            <= algoritmo["dijkstra"]["nos_expandidos"])
+
+
+def test_estimativa_e_a_mesma_rota_do_pedido():
+    """A previa nao pode prometer um preco e o pedido cobrar outro."""
+    passageiro = novo_passageiro()
+    novo_motorista()
+    previa = estimar(passageiro).json()
+    corrida = pedir_corrida(passageiro).json()
+    assert corrida["custo_estimado"] == previa["custo_estimado"]
+
+
+def test_estimativa_mostra_motorista_mais_proximo():
+    passageiro = novo_passageiro()
+    assert estimar(passageiro).json()["motoristas"]["proximos"] == 0
+    novo_motorista()
+    motoristas = estimar(passageiro).json()["motoristas"]
+    assert motoristas["proximos"] == 1 and motoristas["eta_mais_proximo_s"] > 0
+
+
+def test_ponto_longe_vem_com_distancia_de_ancoragem():
+    """Ponto longe e ancorado ao cruzamento mais proximo; a distancia de
+    ancoragem vem na resposta para o front avisar."""
+    dados = estimar(novo_passageiro(), destino=(-23.60, -46.70)).json()
+    assert dados["ancoragem_m"]["destino"] > 1000
+
+
+# ------------------------------------------------------ busca de lugares
+
+def _geocodificador_falso(lugares):
+    """Substitui o Photon: testa recorte e formato sem tocar a rede."""
+    from infra import geocodificacao as geo
+    original = geo._photon
+    geo._photon = lambda texto, caixa, perto, limite: [dict(l) for l in lugares]
+    geo._cache = geo._CacheLRU()
+    return lambda: setattr(geo, "_photon", original)
+
+
+def test_busca_de_lugares_exige_login():
+    assert cliente.get("/lugares/buscar", params={"q": "masp"}).status_code == 401
+
+
+def test_busca_descarta_lugar_fora_da_malha():
+    dentro = {"id": "N1", "titulo": "Dentro", "detalhe": "", "categoria": "lugar",
+              "lat": ORIGEM[0], "lon": ORIGEM[1]}
+    fora = dict(dentro, id="N2", titulo="Fora", lat=-22.9, lon=-43.2)   # Rio
+    restaurar = _geocodificador_falso([dentro, fora])
+    try:
+        resposta = cliente.get("/lugares/buscar", params={"q": "lugar"},
+                               headers=cabecalho(novo_passageiro()))
+    finally:
+        restaurar()
+    assert resposta.status_code == 200, resposta.text
+    assert [l["titulo"] for l in resposta.json()["lugares"]] == ["Dentro"]
+
+
+def test_busca_fora_do_ar_devolve_503():
+    from infra import geocodificacao as geo
+    original = geo._photon
+
+    def quebrado(*_args):
+        raise OSError("sem rede")
+
+    geo._photon = quebrado
+    geo._cache = geo._CacheLRU()
+    try:
+        resposta = cliente.get("/lugares/buscar", params={"q": "qualquer"},
+                               headers=cabecalho(novo_passageiro()))
+    finally:
+        geo._photon = original
+    assert resposta.status_code == 503
+
 # ---------------------------------------------------------------------------
 
 def main():
@@ -390,6 +487,9 @@ def main():
                 falhas += 1
                 print(f"  FALHA {teste.__name__}: {str(erro)[:160]}")
     print(f"\n{len(testes) - falhas}/{len(testes)} testes passaram")
+    # No Windows o arquivo segue aberto enquanto o pool do engine existir.
+    from infra.banco import engine
+    engine.dispose()
     os.unlink(_BANCO.name)
     return 1 if falhas else 0
 

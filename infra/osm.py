@@ -20,6 +20,7 @@ import urllib.request
 
 from algoritmos.busca import busca_caminho_minimo
 from algoritmos.grafo import Grafo, haversine
+from algoritmos.semaforo import Semaforo
 
 ESPELHOS_OVERPASS = (
     "https://overpass-api.de/api/interpreter",
@@ -48,6 +49,11 @@ VELOCIDADE_PADRAO = {
     "living_street": 20.0,
 }
 VELOCIDADE_FALLBACK = 30.0
+
+# O OSM diz ONDE ha semaforo (no com highway=traffic_signals), mas nao a
+# temporizacao. Presumimos ciclo de 90s com 40s de vermelho, ordem de grandeza
+# de cruzamento arterial em Sao Paulo: E[espera] = 40^2 / (2*90) ~ 8,9s.
+SEMAFORO_OSM = Semaforo(vermelho=40.0, ciclo=90.0)
 
 
 # --------------------------------------------------------------------- rede
@@ -139,11 +145,26 @@ def _sentidos(tags):
     return True, True
 
 
-def construir_grafo(dados_osm):
+def semaforos_do_osm(dados_osm):
+    """Nos marcados como semaforo no OSM: {id: (lat, lon)}."""
+    return {
+        elemento["id"]: (elemento["lat"], elemento["lon"])
+        for elemento in dados_osm.get("elements", [])
+        if elemento.get("type") == "node"
+        and (elemento.get("tags") or {}).get("highway") == "traffic_signals"
+    }
+
+
+def construir_grafo(dados_osm, semaforo=SEMAFORO_OSM):
     """Converte o JSON da Overpass no nosso Grafo ponderado direcionado.
 
     Peso da aresta = distancia haversine / velocidade, em SEGUNDOS -- coerente
     com o resto do sistema, onde o que importa e tempo, nao distancia.
+
+    Semaforo: o atraso esperado entra na aresta que CHEGA ao no semaforizado,
+    mesma regra da matriz (e ali que se espera). `semaforo=None` ignora os
+    sinais. Somar atraso so aumenta custo, entao a heuristica continua
+    admissivel.
     """
     coordenadas = {}
     vias = []
@@ -152,6 +173,9 @@ def construir_grafo(dados_osm):
             coordenadas[elemento["id"]] = (elemento["lat"], elemento["lon"])
         elif elemento.get("type") == "way" and elemento.get("nodes"):
             vias.append(elemento)
+
+    sinais = semaforos_do_osm(dados_osm) if semaforo else {}
+    atraso = semaforo.atraso if semaforo else 0.0
 
     grafo = Grafo()
     usados = set()
@@ -177,9 +201,11 @@ def construir_grafo(dados_osm):
             if segundos <= 0:
                 continue  # nos duplicados na mesma coordenada
             if vale_ida:
-                grafo.adicionar_aresta(anterior, atual, segundos)
+                grafo.adicionar_aresta(anterior, atual,
+                                       segundos + (atraso if atual in sinais else 0.0))
             if vale_volta:
-                grafo.adicionar_aresta(atual, anterior, segundos)
+                grafo.adicionar_aresta(atual, anterior,
+                                       segundos + (atraso if anterior in sinais else 0.0))
 
     return grafo
 
@@ -225,22 +251,35 @@ def carregar_malha(sul, oeste, norte, leste, cache=None, podar=True):
 
 # ------------------------------------------------- serializacao para o boot
 
-def salvar_grafo(grafo, caminho):
+def salvar_grafo(grafo, caminho, semaforos=None, semaforo=SEMAFORO_OSM):
     """Serializa o grafo ja processado, para o servidor subir rapido.
 
     Reconstruir a malha a partir do OSM leva dezenas de segundos; ler este
     arquivo leva fracoes. O artefato e gerado uma vez, offline, e versionado.
+
+    `semaforos` ({id: (lat, lon)}) vai junto so para o front desenhar: o
+    atraso ja esta nos pesos. Guardamos apenas os que sobreviveram a poda.
     """
     dados = {
         "nos": [[no, *grafo.coordenadas(no)] for no in grafo.nos],
         "arestas": [[o, d, round(p, 4)]
                     for o in grafo.nos for d, p in grafo.vizinhos(o)],
     }
+    if semaforos:
+        nos = set(grafo.nos)
+        dados["semaforo"] = {"vermelho": semaforo.vermelho, "ciclo": semaforo.ciclo}
+        dados["semaforos"] = [[no, lat, lon] for no, (lat, lon) in semaforos.items()
+                              if no in nos]
     with open(caminho, "w", encoding="utf-8") as arquivo:
         json.dump(dados, arquivo, separators=(",", ":"))
 
 
-def carregar_grafo(caminho):
+def ler_artefato(caminho):
+    """Le o artefato: devolve (grafo, semaforos).
+
+    `semaforos` ja vem no formato de /malha/semaforos (lista de dicts); vazia
+    em artefato antigo, gerado antes de os sinais serem importados.
+    """
     with open(caminho, encoding="utf-8") as arquivo:
         dados = json.load(arquivo)
     grafo = Grafo()
@@ -248,4 +287,17 @@ def carregar_grafo(caminho):
         grafo.adicionar_no(no, lat, lon)
     for origem, destino, peso in dados["arestas"]:
         grafo.adicionar_aresta(origem, destino, peso)
-    return grafo
+
+    temporizacao = dados.get("semaforo") or {}
+    sinal = Semaforo(temporizacao.get("vermelho", SEMAFORO_OSM.vermelho),
+                     temporizacao.get("ciclo", SEMAFORO_OSM.ciclo))
+    semaforos = [
+        {"lat": round(lat, 6), "lon": round(lon, 6), "vermelho": sinal.vermelho,
+         "ciclo": sinal.ciclo, "atraso_medio": round(sinal.atraso, 2)}
+        for _no, lat, lon in dados.get("semaforos", [])
+    ]
+    return grafo, semaforos
+
+
+def carregar_grafo(caminho):
+    return ler_artefato(caminho)[0]
