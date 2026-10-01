@@ -10,8 +10,8 @@ ficaria parada. Com `def`, o FastAPI os executa num threadpool.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from api.deps import (config, obter_conexoes, obter_grafo, obter_indice_nos,
-                      obter_registro, usuario_atual)
+from api.deps import (config, obter_alt, obter_conexoes, obter_grafo,
+                      obter_indice_nos, obter_registro, usuario_atual)
 from api.esquemas import CorridaEntrada, CorridaSaida, RotaSaida
 from api.eventos import comitar_e_publicar
 from dominio import estados as E
@@ -69,6 +69,7 @@ def pedir_corrida(dados: CorridaEntrada,
                   usuario: Usuario = Depends(usuario_atual),
                   sessao: Session = Depends(obter_sessao),
                   grafo=Depends(obter_grafo),
+                  alt=Depends(obter_alt),
                   indice_nos=Depends(obter_indice_nos),
                   registro=Depends(obter_registro),
                   conexoes=Depends(obter_conexoes),
@@ -90,7 +91,7 @@ def pedir_corrida(dados: CorridaEntrada,
 
     try:
         servico.alocar_motorista(sessao, grafo, registro, corrida, cfg)
-        servico.definir_rota(sessao, grafo, corrida)
+        servico.definir_rota(sessao, grafo, corrida, alt=alt)
     except servico.SemMotoristaDisponivel as erro:
         _transitar_ou_409(sessao, corrida, E.CANCELADA)
         comitar_e_publicar(sessao, conexoes, corrida)
@@ -114,12 +115,13 @@ def consultar(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
 
 @rotas.get("/{corrida_id}/rota", response_model=RotaSaida)
 def obter_rota(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
-               sessao: Session = Depends(obter_sessao), grafo=Depends(obter_grafo)):
+               sessao: Session = Depends(obter_sessao), grafo=Depends(obter_grafo),
+               alt=Depends(obter_alt)):
     """Traçado para o Leaflet desenhar. A* com heuristica haversine."""
     corrida = _carregar(sessao, corrida_id, usuario)
     try:
         segundos, caminho = servico.calcular_rota(grafo, corrida.no_origem,
-                                                  corrida.no_destino)
+                                                  corrida.no_destino, alt=alt)
     except servico.DestinoInalcancavel as erro:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(erro))
     return RotaSaida(segundos=segundos,
@@ -131,7 +133,8 @@ def obter_rota(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
 def obter_rota_do_motorista(corrida_id: int,
                             usuario: Usuario = Depends(usuario_atual),
                             sessao: Session = Depends(obter_sessao),
-                            grafo=Depends(obter_grafo)):
+                            grafo=Depends(obter_grafo),
+                            alt=Depends(obter_alt)):
     """Trajeto do motorista ate o passageiro, sobre as ruas.
 
     Alvo unico, portanto A* com heuristica. Calculado sob demanda a partir da
@@ -148,7 +151,7 @@ def obter_rota_do_motorista(corrida_id: int,
 
     try:
         segundos, caminho = servico.calcular_rota(grafo, motorista.no_atual,
-                                                 corrida.no_origem)
+                                                 corrida.no_origem, alt=alt)
     except servico.DestinoInalcancavel as erro:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(erro))
 

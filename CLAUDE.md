@@ -29,6 +29,8 @@ Camada de algoritmos em `algoritmos/` (não versionada, por decisão acima):
 - `topologica.py` — algoritmo de Kahn (genérico)
 - `matriz_mapa.py` — mapa como **matriz de células** → grafo; fonte de autoria
 - `semaforo.py` — atraso esperado `E[espera] = r²/(2c)`
+- `alt.py` — A* + Landmarks + desigualdade Triangular; heurística 14× mais
+  apertada que a haversine na malha real
 - `indice_espacial.py` — `IndiceLinear`, mantido como **oráculo** da quadtree
 - `EXPLICACAO.md` — guia didático dos algoritmos
 - `MATEMATICA.md` — guia didático das fórmulas (companheiro do acima)
@@ -39,6 +41,7 @@ Camada de infraestrutura em `infra/` (rede e disco; `algoritmos/` NUNCA importa 
 - `osm.py` — Overpass API, parser OSM → `Grafo`, poda ao componente
   fortemente conexo, serialização do artefato
 - `importar_malha.py` — CLI: roda uma vez offline e gera `dados/malha.json`
+- `preparar_alt.py` — CLI: gera `dados/alt.bin` com os marcos do ALT
 - `tests/test_osm.py` — 18 testes, rodam sem rede (fixture embutido)
 
 Camada de domínio em `dominio/` (regras, sem HTTP e sem SQL bruto):
@@ -138,6 +141,25 @@ Decisões do front-end:
   do haversine.
 - A rotação da agulha é **acumulada**: de 350° para 10° ela gira +20°, não
   −340°. Sem isso a animação volta pelo caminho longo.
+
+Decisões do ALT:
+
+- Na malha real de SP o A* com haversine ganha só **1,37×** do Dijkstra: o
+  `v_max` de 110 km/h é imposto por 8 arestas de marginal, e a rua mediana tem
+  30 km/h. Com ALT o ganho vai a **14,3×** (157 ms → 16 ms por rota).
+- As tabelas são **float64, nunca float32**. Medido: com float32 o limite supera
+  o custo real em 2e-6 relativo, porque a admissibilidade depende de uma
+  SUBTRAÇÃO e a diferença herda o arredondamento das duas pontas.
+- `d(v, L)` vem de busca no grafo **reverso** — a dualidade da Proposição C.7,
+  a mesma já usada no pareamento.
+- Marcos na **periferia**, por seleção do ponto mais distante. Marco no centro
+  fica "entre" origem e destino e seu limite vira quase zero.
+- **Marcos ativos**: avaliar 16 marcos por chamada de `h` custa caro em Python
+  e anularia o ganho. Na consulta escolhemos os 4 melhores para aquele par.
+- O artefato carrega **impressão digital** do conjunto de vértices, conferida
+  no boot. Sem ela, um `alt.bin` de outra malha seria usado em silêncio e o A*
+  devolveria rota subótima sem erro algum.
+- Sem `dados/alt.bin` o sistema **continua correto**, caindo na haversine.
 
 - Pesos do grafo são **tempo em segundos**, não distância.
 - A heurística do A* precisa ser dividida pela velocidade máxima para continuar

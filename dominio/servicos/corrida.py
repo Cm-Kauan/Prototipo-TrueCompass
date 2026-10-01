@@ -47,16 +47,21 @@ def transitar(sessao, corrida, novo_estado):
 
 # ------------------------------------------------------------------- rota
 
-def calcular_rota(grafo, no_origem, no_destino):
-    """A* com heuristica haversine admissivel. Devolve (segundos, caminho).
+def calcular_rota(grafo, no_origem, no_destino, alt=None):
+    """A* ate o destino. Devolve (segundos, caminho).
 
-    O divisor da heuristica e a velocidade maxima MEDIDA no proprio grafo, e
+    Com `alt`, usa a heuristica de marcos (ALT), muito mais apertada; sem ela,
+    cai na haversine. As duas sao admissiveis, logo a rota devolvida e a mesma
+    -- muda so quanto do grafo precisa ser explorado para encontra-la.
+
+    O divisor da haversine e a velocidade maxima MEDIDA no proprio grafo, e
     nao um teto fixo: a malha real de Sao Paulo tem trecho a 110 km/h, e um
     teto de 100 faria h superestimar ali.
     """
     if no_origem == no_destino:
         return 0.0, [no_origem]
-    heuristica = heuristica_haversine(grafo, no_destino)
+    heuristica = (alt.heuristica(no_destino, origem=no_origem) if alt
+                  else heuristica_haversine(grafo, no_destino))
     resultado = busca_caminho_minimo(grafo, no_origem, {no_destino}, h=heuristica)
     if no_destino not in resultado.custos:
         raise DestinoInalcancavel(f"sem rota de {no_origem} ate {no_destino}")
@@ -207,9 +212,10 @@ def liberar_motorista(sessao, registro, motorista_id):
 
 # ----------------------------------------------------------------- fluxo
 
-def definir_rota(sessao, grafo, corrida):
+def definir_rota(sessao, grafo, corrida, alt=None):
     """Calcula a rota da corrida e avanca o estado para `rota`."""
-    segundos, caminho = calcular_rota(grafo, corrida.no_origem, corrida.no_destino)
+    segundos, caminho = calcular_rota(grafo, corrida.no_origem, corrida.no_destino,
+                                      alt=alt)
     corrida.custo_estimado = estimar_custo(segundos, comprimento_metros(grafo, caminho))
     transitar(sessao, corrida, E.ROTA)
     return segundos, caminho

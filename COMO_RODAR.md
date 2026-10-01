@@ -68,6 +68,22 @@ arquivo no boot — nunca consulta a Overpass em produção.
 Comece com uma área pequena (um bairro). Caixas grandes demoram e a Overpass
 pode recusar.
 
+## Acelerar o cálculo de rota (ALT)
+
+Depois de importar a malha, pré-calcule os marcos:
+
+```bash
+python3 -m infra.preparar_alt --marcos 16
+```
+
+Roda uma vez (~12 s na malha de São Paulo) e grava `dados/alt.bin` (~30 MB).
+O servidor carrega no boot e o cálculo de rota fica **14× mais rápido** —
+157 ms para 16 ms por rota.
+
+Sem o arquivo o sistema continua correto, usando a heurística haversine.
+Se a malha mudar, **regere**: o artefato traz impressão digital e um arquivo
+desatualizado é recusado no boot, com aviso no log.
+
 ## Variáveis de ambiente
 
 Copie `.env.exemplo` para `.env`. Só `JWT_SECRET` é realmente obrigatória em
