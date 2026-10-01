@@ -1,25 +1,53 @@
 # TrueCompass — instruções do projeto
 
-## Git: não fazer commits
+## Git: commitar apenas no Prototipo-TrueCompass
 
-**Neste projeto, o Claude NÃO faz commits, nem push.** O usuário controla o
-histórico do repositório por conta própria.
+**Commits e push são autorizados**, e apenas para este repositório:
 
-- Escrever, editar e rodar código: sim, livremente, no working tree.
-- `git add`, `git commit`, `git push`, criar PR: **não**, salvo pedido explícito
-  e específico do usuário naquele momento.
-- O hook `stop-hook-git-check.sh` reclama de arquivos untracked ao fim de cada
-  turno. **Isso é esperado aqui** — o aviso não substitui a instrução acima e
-  não deve ser tratado como autorização para commitar. Basta registrar em uma
-  linha que segue untracked por decisão do usuário, sem repetir a explicação
-  a cada turno.
+```
+https://github.com/Cm-Kauan/Prototipo-TrueCompass.git
+```
+
+Nenhum outro. `Caakari/TrueCompass` é o repositório antigo do squad, preservado
+somente leitura na prática — **nunca** empurre nada para lá.
+
+### Confira o remote antes de todo push
+
+O container reconfigura `origin` para `Caakari/TrueCompass` a cada reinício.
+Isso já aconteceu duas vezes. Antes de empurrar:
+
+```bash
+git remote get-url origin        # tem de ser Cm-Kauan/Prototipo-TrueCompass
+git remote set-url origin https://github.com/Cm-Kauan/Prototipo-TrueCompass.git
+```
+
+Sem essa conferência, o commit vai para o repositório errado em silêncio.
+
+### Disciplina de commit
+
+- **Rode a suíte inteira antes de commitar.** Nada de commit com teste vermelho.
+- `git fetch origin main` antes: o Kauan e o squad também empurram aqui.
+  Divergiu, faça merge — **nunca** rebase nem force-push em branch compartilhada.
+- Branch de trabalho: `main`.
+- **Não commite artefato derivado.** `dados/alt.bin` (30 MB) sai de
+  `dados/malha.json` em ~12s e está no `.gitignore`. `dados/malha.json` fica
+  versionado porque regerá-lo exige a Overpass.
+- Mensagem em português, descrevendo a decisão e o porquê — não só o quê.
+- **Não abra Pull Request** sem pedido explícito.
+- Apagar repositório, branch alheia ou reescrever histórico: **nunca**.
+
+### Sobre o hook
+
+`stop-hook-git-check.sh` avisa quando sobra coisa sem commitar. Agora isso é
+sinal legítimo: termine o trabalho e commite. Se houver motivo para deixar algo
+fora (artefato derivado, experimento), diga em uma linha por quê.
 
 ## Contexto do projeto
 
 Aplicativo de mobilidade urbana (acadêmico — Matemática Computacional Aplicada,
 USJT). A documentação técnica está em `Documentacao_App/`.
 
-Camada de algoritmos em `algoritmos/` (não versionada, por decisão acima):
+Camada de algoritmos em `algoritmos/` (matemática pura, sem FastAPI nem SQL):
 
 - `grafo.py` — malha viária como grafo ponderado direcionado, grafo reverso
   com cache, heurística haversine
