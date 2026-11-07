@@ -3,103 +3,75 @@
 Mapa de onde está cada coisa. Projeto acadêmico de Matemática Computacional
 Aplicada (USJT).
 
+```
+Prototipo-TrueCompass/
+├── frontend/      o que roda no celular/navegador (React)
+│   ├── app/            ATUAL — React + TypeScript, animações
+│   ├── web/            anterior — React + JavaScript
+│   └── prototipo_html/ protótipo visual original do squad
+├── backend/       servidor (FastAPI): HTTP, regras de negócio, banco, rede
+│   ├── api/  dominio/  infra/
+│   ├── dados/          malha real de São Paulo (OpenStreetMap)
+│   └── tests/
+├── matematica/    os algoritmos puros: grafo, A*, quadtree, matriz do mapa
+│   ├── algoritmos/
+│   ├── mapas/          o mapa em matriz (texto editável)
+│   └── tests/
+└── docs/          documentação formal (PDF) e material da disciplina
+```
+
+As setas de dependência apontam **para dentro**: `frontend` fala com o
+`backend` só por HTTP/WebSocket; o `backend` usa a `matematica`; e a
+`matematica` não conhece ninguém — por isso seus testes rodam sem banco, sem
+servidor e sem rede. O backend acha a pasta `matematica/` sozinho
+(`backend/matematica_no_caminho.py`).
+
 ## Comece por aqui
 
 | Arquivo | Para quê |
 |---|---|
-| `COMO_RODAR.md` | instalar, rodar os testes, subir o servidor, importar a malha |
+| `COMO_RODAR.md` | instalar, rodar os testes, subir o servidor e o app |
 | `README.md` | visão do produto — o que o app faz, para quem usa |
 | `CLAUDE.md` | decisões de projeto que valem manter (e as armadilhas) |
+| `frontend/app/README.md` | o app novo: estrutura e o que cada animação representa |
 
 ## Aprendizado do squad
 
 | Arquivo | Assunto |
 |---|---|
-| `algoritmos/EXPLICACAO.md` | os **algoritmos** em linguagem simples (A\*, busca reversa) |
-| `algoritmos/MATEMATICA.md` | as **fórmulas**: de onde vieram e o que quebra se mexer |
+| `matematica/algoritmos/EXPLICACAO.md` | os **algoritmos** em linguagem simples (A\*, busca reversa) |
+| `matematica/algoritmos/MATEMATICA.md` | as **fórmulas**: de onde vieram e o que quebra se mexer |
 
-## Documentação formal
+## Documentação formal — `docs/`
 
 | Arquivo | Conteúdo |
 |---|---|
-| `Documentacao_App/TrueCompass_Documentacao_Tecnica.pdf` | doc original — seções 1 a 7 |
-| `Documentacao_App/TrueCompass_Secao_C_Fundamentacao_Matematica.pdf` | 9 definições, 14 proposições, 5 corolários, com demonstrações |
-| `Documentacao_App/TrueCompass_1a_Parcial_Relatorio_Executivo.pdf` | entrega da 1ª parcial, 8 seções |
-| `Documentacao_Aula/` | material da disciplina |
+| `docs/Documentacao_App/TrueCompass_Documentacao_Tecnica.pdf` | doc original — seções 1 a 7 |
+| `docs/Documentacao_App/TrueCompass_Secao_C_Fundamentacao_Matematica.pdf` | 9 definições, 14 proposições, 5 corolários, com demonstrações |
+| `docs/Documentacao_App/TrueCompass_1a_Parcial_Relatorio_Executivo.pdf` | entrega da 1ª parcial, 8 seções |
+| `docs/Documentacao_Aula/` | material da disciplina |
 
 > A Seção C **retifica** a §6 da doc original: a consulta por raio na quadtree
 > é O(log n + k), e não O(log n). Ver Proposição C.14.
 
-## Código — backend
+## Matemática — `matematica/`
 
-As setas de dependência apontam sempre para dentro: `algoritmos/` não conhece
-ninguém, e é por isso que seus testes rodam sem banco e sem servidor.
-
-### `algoritmos/` — matemática pura
+### `matematica/algoritmos/` — matemática pura
 
 | Arquivo | O que faz |
 |---|---|
-| `grafo.py` | malha como grafo ponderado direcionado, grafo reverso, haversine |
+| `grafo.py` | malha como grafo ponderado direcionado, grafo reverso, haversine, velocidade máxima medida |
 | `busca.py` | Dijkstra e A\* na **mesma** rotina (Dijkstra ≡ A\* com h ≡ 0) |
 | `matching.py` | pareamento reverso many-to-one — 1 busca em vez de k |
 | `quadtree.py` | índice espacial com poda por retângulo |
 | `indice_espacial.py` | varredura linear, mantida como **oráculo** dos testes |
 | `topologica.py` | algoritmo de Kahn |
 | `matriz_mapa.py` | mapa como matriz de células → grafo |
-| `semaforo.py` | atraso esperado em cruzamento semaforizado |
+| `semaforo.py` | atraso esperado em cruzamento semaforizado, r²/2c |
 | `cidade_exemplo.py` | cidade sintética (mão única, avenidas, rio com 2 pontes) |
-| `demo.py` | comparativo medido — `python3 -m algoritmos.demo` |
+| `demo.py` | comparativo medido — `cd matematica && python3 -m algoritmos.demo` |
 
-### `dominio/` — regras de negócio
-
-| Arquivo | O que faz |
-|---|---|
-| `estados.py` | DAG do ciclo da corrida; Kahn valida no boot |
-| `registro.py` | posições dos motoristas em memória (não no banco) |
-| `servicos/corrida.py` | orquestra quadtree → busca reversa → A\* |
-
-### `api/` — camada HTTP (FastAPI)
-
-| Arquivo | O que faz |
-|---|---|
-| `main.py` | app e `lifespan`: valida DAG, carrega malha, constrói reverso |
-| `rotas/auth.py` | registro e login (JWT) |
-| `rotas/motoristas.py` | ping de GPS, disponibilidade |
-| `rotas/corridas.py` | ciclo da corrida |
-| `rotas/ws.py` | acompanhamento em tempo real |
-| `conexoes.py` | gerenciador de WebSocket |
-| `eventos.py` | mensagens do WS e `comitar_e_publicar` |
-| `esquemas.py` · `deps.py` | contratos Pydantic e injeção de dependências |
-
-### `infra/` — banco, rede, segredos
-
-| Arquivo | O que faz |
-|---|---|
-| `osm.py` | Overpass API, parser OSM, poda ao componente fortemente conexo |
-| `importar_malha.py` | CLI: gera `dados/malha.json` uma vez, offline |
-| `modelos.py` · `banco.py` | tabelas SQLAlchemy e sessão |
-| `seguranca.py` | bcrypt e JWT |
-| `config.py` | configuração via ambiente |
-
-## Testes — 140 no backend, sem pytest
-
-```bash
-for t in algoritmos quadtree osm estados api ws; do python3 tests/test_$t.py; done
-```
-
-| Arquivo | Qtd | Cobre |
-|---|---:|---|
-| `tests/test_algoritmos.py` | 15 | Dijkstra, A\*, pareamento reverso |
-| `tests/test_quadtree.py` | 20 | índice espacial, poda, casos degenerados |
-| `tests/test_osm.py` | 18 | parser OSM, mão única, poda (sem rede) |
-| `tests/test_matriz.py` | 29 | matriz do mapa, semáforos, mapa de produção |
-| `tests/test_estados.py` | 18 | Kahn, DAG, transições proibidas |
-| `tests/test_api.py` | 26 | ciclo completo via HTTP, auth, concorrência, malha |
-| `tests/test_ws.py` | 14 | tempo real, isolamento entre corridas |
-
-Mais 20 verificações de interface em `web/e2e/fluxo.py` (Playwright).
-
-## Mapa — `mapas/centro.mapa`
+### `matematica/mapas/centro.mapa` — o mapa em matriz
 
 Matriz 36×36 editável como texto. Um caractere por célula:
 
@@ -111,39 +83,87 @@ Matriz 36×36 editável como texto. Um caractere por célula:
 | `> < ^ v` | mão única |
 | `#` | intransponível (quarteirão, rio, parque) |
 
-Edite o arquivo e reinicie o servidor — o grafo é derivado dele no boot.
+O servidor usa a malha real do OpenStreetMap quando ela existe; para usar a
+matriz, suba com `MALHA_ARQUIVO=` (vazio). O grafo é derivado dela no boot.
 
-## Front-end — `web/` (React + Vite)
+## Backend — `backend/`
+
+### `backend/dominio/` — regras de negócio
 
 | Arquivo | O que faz |
 |---|---|
-| `src/api.js` | cliente HTTP e URL do WebSocket |
-| `src/App.jsx` | sessão, tema claro/escuro, carga da malha |
-| `src/componentes/Mapa.jsx` | Leaflet: malha, rotas, marcadores |
-| `src/componentes/PainelPassageiro.jsx` | pedir corrida e acompanhar |
-| `src/componentes/PainelMotorista.jsx` | ficar online, receber, deslocar |
-| `src/componentes/LinhaDeEstados.jsx` | o DAG da corrida, visualmente |
-| `src/ganchos/usarCorridaAoVivo.js` | assina o WebSocket |
-| `e2e/fluxo.py` | teste ponta a ponta (Playwright), 20 verificações |
+| `estados.py` | DAG do ciclo da corrida; Kahn valida no boot |
+| `registro.py` | posições dos motoristas em memória (não no banco) |
+| `servicos/corrida.py` | orquestra quadtree → busca reversa → A\*; prévia da viagem |
+
+### `backend/api/` — camada HTTP (FastAPI)
+
+| Arquivo | O que faz |
+|---|---|
+| `main.py` | app e `lifespan`: valida DAG, carrega malha, constrói reverso |
+| `rotas/auth.py` | registro e login (JWT) |
+| `rotas/motoristas.py` | ping de GPS, disponibilidade |
+| `rotas/corridas.py` | ciclo da corrida |
+| `rotas/lugares.py` | busca de endereços reais (Photon/Nominatim) |
+| `rotas/viagens.py` | prévia: rota A\*, preço, ondas de busca A\* × Dijkstra |
+| `rotas/malha.py` | geometria da malha e semáforos, para o mapa |
+| `rotas/ws.py` | acompanhamento em tempo real |
+| `conexoes.py` · `eventos.py` | WebSocket e `comitar_e_publicar` |
+| `esquemas.py` · `deps.py` | contratos Pydantic e injeção de dependências |
+
+### `backend/infra/` — banco, rede, segredos
+
+| Arquivo | O que faz |
+|---|---|
+| `osm.py` | Overpass API, parser OSM, semáforos, poda ao componente fortemente conexo |
+| `importar_malha.py` | CLI: gera `backend/dados/malha.json` uma vez, offline |
+| `geocodificacao.py` | busca de lugares, com cache e limite de taxa |
+| `modelos.py` · `banco.py` | tabelas SQLAlchemy e sessão |
+| `seguranca.py` | bcrypt e JWT |
+| `config.py` | configuração via ambiente (caminhos relativos partem de `backend/`) |
+
+## Testes — 160, sem pytest
 
 ```bash
-cd web && npm install && npm run dev      # http://127.0.0.1:5173
+for t in algoritmos quadtree matriz; do python3 matematica/tests/test_$t.py; done
+for t in osm estados api ws;        do python3 backend/tests/test_$t.py; done
 ```
 
-Leia `web/README.md` para o roteiro de demonstração.
+| Arquivo | Qtd | Cobre |
+|---|---:|---|
+| `matematica/tests/test_algoritmos.py` | 19 | Dijkstra, A\*, pareamento reverso, velocidade máxima medida |
+| `matematica/tests/test_quadtree.py` | 20 | índice espacial, poda, casos degenerados |
+| `matematica/tests/test_matriz.py` | 29 | matriz do mapa, semáforos, mapa de produção |
+| `backend/tests/test_osm.py` | 23 | parser OSM, mão única, semáforos, poda (sem rede) |
+| `backend/tests/test_estados.py` | 18 | Kahn, DAG, transições proibidas |
+| `backend/tests/test_api.py` | 37 | ciclo via HTTP, auth, concorrência, malha, prévia, lugares |
+| `backend/tests/test_ws.py` | 14 | tempo real, isolamento entre corridas |
 
-`Base_Front_End/Front_End.html` — protótipo visual original do squad, mantido
-como referência (a paleta do app veio dele).
+`frontend/web/e2e/fluxo.py` (Playwright) ainda usa a interface do front antigo.
+
+## Front-end — `frontend/`
+
+| Pasta | O que é |
+|---|---|
+| `frontend/app/` | **atual** — React + TypeScript. Busca real, onda do A\*, mapa OSM. Porta 5180 |
+| `frontend/web/` | anterior — React + JavaScript. Porta 5173 |
+| `frontend/prototipo_html/Front_End.html` | protótipo visual original do squad (a paleta veio dele) |
+
+```bash
+cd frontend/app && npm install && npm run dev      # http://localhost:5180
+```
 
 ## Deploy
 
-| Camada | Plataforma | Arquivos |
+| Camada | Plataforma | Configuração |
 |---|---|---|
-| Back-end | **Railway** | `Procfile`, `railway.json`, `requirements.txt` |
-| Front-end | **Vercel** | — |
+| Back-end | **Railway** | raiz do repositório: `Procfile`, `railway.json`, `requirements.txt` (aponta para `backend/`) |
+| Front-end | **Vercel** | diretório raiz `frontend/app`, variável `VITE_API_URL` |
 
-Serverless não serve para o backend: sem WebSocket e sem processo persistente
-para manter o grafo em memória. Mantenha `--workers 1`.
+O Railway precisa da RAIZ do repositório (e não só de `backend/`), porque o
+backend importa `matematica/`. Serverless não serve para o backend: sem
+WebSocket e sem processo persistente para manter o grafo em memória.
+Mantenha `--workers 1`.
 
 ## Resultados medidos
 
@@ -154,4 +174,4 @@ para manter o grafo em memória. Mantenha `--workers 1`.
 | Varredura linear → quadtree | **154,8×** | preservada |
 
 Em nenhum dos três houve perda de otimalidade: a resposta é a **mesma**,
-obtida com menos busca. Reproduza com `python3 -m algoritmos.demo`.
+obtida com menos busca. Reproduza com `cd matematica && python3 -m algoritmos.demo`.

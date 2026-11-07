@@ -17,9 +17,28 @@ histórico do repositório por conta própria.
 ## Contexto do projeto
 
 Aplicativo de mobilidade urbana (acadêmico — Matemática Computacional Aplicada,
-USJT). A documentação técnica está em `Documentacao_App/`.
+USJT). A documentação técnica está em `docs/Documentacao_App/`.
 
-Camada de algoritmos em `algoritmos/` (não versionada, por decisão acima):
+O repositório é separado em quatro pastas (mapa completo em `INDICE.md`):
+
+```
+frontend/    app/ (atual, React+TS) · web/ (anterior) · prototipo_html/
+backend/     api/ · dominio/ · infra/ · dados/ · tests/
+matematica/  algoritmos/ · mapas/ · tests/
+docs/        Documentacao_App/ · Documentacao_Aula/
+```
+
+- O backend importa `algoritmos` de `matematica/` via
+  `backend/matematica_no_caminho.py`, chamado no `__init__` de `api`, `dominio`
+  e `infra`. Testes do backend importam esse módulo logo após o `sys.path`.
+  **Não** mover `algoritmos/` para dentro do backend: ele não conhece ninguém.
+- Caminhos de dados em `infra/config.py` são resolvidos a partir de `backend/`
+  (a matriz, em `matematica/mapas/`): o servidor sobe de qualquer pasta.
+- Servidor: `uvicorn --app-dir backend api.main:app` na raiz (é assim no
+  Railway, que precisa da RAIZ do repositório por causa de `matematica/`).
+  `requirements.txt` da raiz só faz `-r backend/requirements.txt`.
+
+Camada de algoritmos em `matematica/algoritmos/`:
 
 - `grafo.py` — malha viária como grafo ponderado direcionado, grafo reverso
   com cache, heurística haversine
@@ -32,30 +51,38 @@ Camada de algoritmos em `algoritmos/` (não versionada, por decisão acima):
 - `indice_espacial.py` — `IndiceLinear`, mantido como **oráculo** da quadtree
 - `EXPLICACAO.md` — guia didático dos algoritmos
 - `MATEMATICA.md` — guia didático das fórmulas (companheiro do acima)
-- `tests/test_algoritmos.py` — 15 testes, rodam com `python3` puro (sem pytest)
+- `matematica/tests/test_algoritmos.py` — 19 testes, rodam com `python3` puro (sem pytest)
 
-Camada de infraestrutura em `infra/` (rede e disco; `algoritmos/` NUNCA importa daqui):
+Camada de infraestrutura em `backend/infra/` (rede e disco; `algoritmos/` NUNCA importa daqui):
 
 - `osm.py` — Overpass API, parser OSM → `Grafo`, poda ao componente
   fortemente conexo, serialização do artefato
-- `importar_malha.py` — CLI: roda uma vez offline e gera `dados/malha.json`
-- `tests/test_osm.py` — 18 testes, rodam sem rede (fixture embutido)
+- `importar_malha.py` — CLI: roda uma vez offline e gera `backend/dados/malha.json`
+  (versionado: Pinheiros → Tatuapé, Santana → Ipiranga; 118 mil nós, 3,5 mil semáforos)
+- `geocodificacao.py` — busca de lugares: Photon ao digitar, Nominatim só no Enter
+- `backend/tests/test_osm.py` — 23 testes, rodam sem rede (fixture embutido)
 
-Camada de domínio em `dominio/` (regras, sem HTTP e sem SQL bruto):
+Camada de domínio em `backend/dominio/` (regras, sem HTTP e sem SQL bruto):
 
 - `estados.py` — DAG do ciclo da corrida; Kahn valida no boot
 - `registro.py` — posições dos motoristas em memória (não no banco)
 - `servicos/corrida.py` — orquestra índice espacial → busca reversa → A*
 
-Camada HTTP em `api/` (FastAPI):
+Camada HTTP em `backend/api/` (FastAPI):
 
 - `main.py` — app e `lifespan` (valida DAG, carrega malha, constrói reverso)
-- `rotas/` — auth, motoristas, corridas, malha, ws · `conexoes.py` — WebSocket
+- `rotas/` — auth, motoristas, corridas, malha, lugares, viagens, ws · `conexoes.py` — WebSocket
 - `eventos.py` — mensagens do WS e `comitar_e_publicar`
-- `tests/test_estados.py` (18), `tests/test_api.py` (26), `tests/test_ws.py` (14)
-- `tests/test_matriz.py` (29) — matriz e semáforos
+- `backend/tests/`: `test_estados.py` (18), `test_api.py` (37), `test_ws.py` (14)
+- `matematica/tests/`: `test_matriz.py` (29) — matriz e semáforos; `test_quadtree.py` (20)
 
-Front-end em `web/` (React + Vite):
+Front-end ATUAL em `frontend/app/` (React + TypeScript + Vite, porta 5180) — ver `frontend/app/README.md`:
+
+- `src/tipos.ts` espelha os contratos do backend; `src/api.ts` é o cliente tipado
+- `src/mapa/onda.ts` — canvas que anima a ONDA da busca (A* e Dijkstra) e o cometa
+- `src/telas/` — Entrada, Busca, Passageiro, Motorista · `src/ui/` — Bússola, Folha, Odômetro
+
+Front-end ANTIGO em `frontend/web/` (React + Vite, JS, porta 5173), mantido até decisão do usuário:
 
 - `src/api.js` — cliente HTTP e URL do WebSocket
 - `src/componentes/` — Mapa (Leaflet), Bussola (rumo verdadeiro), painéis de
@@ -68,7 +95,7 @@ Front-end em `web/` (React + Vite):
 Deploy: **front no Vercel, back no Railway**. Serverless não serve para o back
 (sem WebSocket, sem processo persistente para o grafo em memória).
 
-Mapa em `mapas/*.mapa` — matriz editável como texto, um caractere por célula:
+Mapa em `matematica/mapas/*.mapa` — matriz editável como texto, um caractere por célula:
 `.` rua · `A` avenida · `S` semáforo · `> < ^ v` mão única · `#` intransponível.
 
 Decisões que valem manter:
@@ -84,7 +111,14 @@ Decisões que valem manter:
   admissível e consistente sem alteração. Testado.
 - O atraso tem de estar no **peso da aresta**, não somado ao final: medido,
   **67%** das rotas mudam de traçado quando os semáforos entram no cálculo.
-- Ordem de carga do mapa: matriz → artefato OSM → cidade sintética.
+- Ordem de carga do mapa: artefato OSM → matriz → cidade sintética. Para usar
+  a matriz com o artefato presente: `MALHA_ARQUIVO=` (vazio).
+- O divisor da heurística é a velocidade máxima MEDIDA no grafo
+  (`Grafo.velocidade_maxima_kmh`), não um teto fixo: a malha real tem marginal
+  a 110 km/h, e o teto antigo de 100 tornava o A* inadmissível.
+- `/viagens/estimativa` com `explorar` devolve a ordem de descoberta de cada
+  busca (ordem de inserção de `distancias`). A* e Dijkstra são amostrados com o
+  MESMO passo (`passo_comum`), senão a comparação visual mentiria.
 - `tests/test_api.py` e `test_ws.py` **fixam** `MAPA_MATRIZ=__inexistente__`:
   testam a API, não qual mapa é o padrão do servidor.
 - **Id de nó é INTEIRO**, igual ao do OpenStreetMap. A cidade sintética segue
@@ -116,8 +150,19 @@ Decisões do front-end:
 
 - O mapa desenha a malha vinda de `/malha/trechos`; os tiles do OSM são pano
   de fundo **opcional** e a camada é removida após 8 falhas seguidas.
-- Marcadores são `circleMarker` (SVG), **nunca** ícones: os ícones padrão do
-  Leaflet quebram sob bundler por causa do caminho relativo das imagens.
+- Marcadores são `circleMarker` (SVG) ou `divIcon` (HTML/CSS), **nunca** os
+  ícones padrão do Leaflet: eles quebram sob bundler por causa do caminho
+  relativo das imagens.
+- Tiles: os da **CARTO passaram a exigir chave de API** (aparecem com marca
+  d'água). Use os tiles padrão do OpenStreetMap; tema escuro = filtro CSS de
+  inversão sobre eles. O front antigo (`frontend/web/`) ainda aponta para a CARTO.
+- **`AnimatePresence mode="wait"` na troca de telas do App trava**: a tela de
+  saída anima até opacidade 0 e nunca é desmontada. Use modo simultâneo com
+  telas `position: absolute`. O `frontend/web/src/App.jsx` antigo ainda tem esse defeito
+  (é por isso que o painel do motorista não abria lá).
+- Mola (spring) em `filter: blur()` passa de zero → blur negativo inválido.
+- O carimbo do `requestAnimationFrame` pode ser ANTERIOR ao `performance.now()`
+  lido ao iniciar uma animação: prenda o tempo decorrido em zero.
 - A malha sai em **duas** camadas `L.polyline` multi-segmento (mão única e mão
   dupla), não uma por rua — uma camada por rua trava o navegador.
 - O painel do motorista envia **batida de GPS a cada 4s** enquanto online. Sem
@@ -147,5 +192,5 @@ Decisões do front-end:
 - Malha vinda do OSM **precisa** ser podada ao componente fortemente conexo:
   extrato por caixa delimitadora sempre traz fragmentos soltos e armadilhas de
   mão única. A poda reusa o grafo reverso (passo central do Kosaraju).
-- O servidor **não** consulta a Overpass no boot. Lê `dados/malha.json`, gerado
+- O servidor **não** consulta a Overpass no boot. Lê `backend/dados/malha.json`, gerado
   offline pelo CLI. `dados/` não é versionado com dados de teste.
