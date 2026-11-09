@@ -4,17 +4,11 @@
     90 cm de largura x 120 cm de altura, retrato.
 
 Tipografia conforme a especificação da disciplina:
-    título 80 pt · títulos de seção 36 a 40 pt · corpo e bullets 21 a 26 pt
-    (o mínimo de 20 pt é respeitado em todo o banner, inclusive nas legendas).
+    título 80 pt · títulos de seção 40 pt · corpo e bullets 21 a 25 pt
+    (o mínimo de 20 pt é respeitado em todo o banner, legendas inclusive).
 
 Fontes: Montserrat, em `fontes/`; na falta dela, Liberation Sans, que é
-metricamente compatível com a Arial — as duas são permitidas. Para baixar a
-Montserrat sem navegador:
-
-    npm pack @fontsource/montserrat && tar xzf fontsource-montserrat-*.tgz
-    python3 -c "from fontTools.ttLib import TTFont; \\
-        [TTFont(f'package/files/montserrat-latin-{p}-normal.woff').save(f'fontes/Montserrat-{p}.ttf') \\
-         for p in ('400','600','700','800')]"
+metricamente compatível com a Arial — as duas são permitidas.
 
 Uso:
     python3 docs/banner/gerar_banner.py              # gera banner_truecompass.pdf
@@ -66,9 +60,10 @@ def _registrar_fontes() -> tuple[str, str, str, str]:
 REG, SEMI, BOLD, BLACK = _registrar_fontes()
 MONO = "Courier-Bold"
 
-# Caractere fora da fonte sai BRANCO no PDF, sem erro nenhum. Como a Montserrat
-# do Google vem no subconjunto "latin", setas e símbolos matemáticos não estão
-# lá — então todo texto desenhado passa por esta conferência.
+
+# Caractere fora da fonte sai BRANCO no PDF, sem erro nenhum. A Montserrat do
+# Google vem no subconjunto "latin", sem setas nem símbolos matemáticos — por
+# isso todo texto desenhado passa por esta conferência.
 def _glifos_da_fonte() -> set[int] | None:
     caminho = os.path.join(AQUI, "fontes", "Montserrat-400.ttf")
     if not os.path.exists(caminho):
@@ -91,18 +86,21 @@ def _conferir(txto: str) -> str:
 
 
 # --------------------------------------------------------------------- paleta
-PAPEL = (0.961, 0.961, 0.945)
-TINTA = (0.078, 0.086, 0.094)
-SUAVE = (0.345, 0.376, 0.404)
-ACO = (0.231, 0.251, 0.275)
-VERDE = (0.180, 0.482, 0.310)
-VERDE_CLARO = (0.361, 0.604, 0.420)
-VERMELHO = (0.800, 0.231, 0.275)
-LATAO = (0.620, 0.478, 0.263)
-ESCURO = (0.067, 0.075, 0.082)
+PAPEL = (0.965, 0.961, 0.949)
+TINTA = (0.063, 0.071, 0.078)
+SUAVE = (0.396, 0.420, 0.443)
+FRACO = (0.580, 0.600, 0.616)
+ACO = (0.169, 0.188, 0.208)
+VERDE = (0.157, 0.482, 0.298)
+VERDE_CLARO = (0.392, 0.675, 0.463)
+VERMELHO = (0.800, 0.220, 0.267)
+LATAO = (0.667, 0.510, 0.251)
+ESCURO = (0.051, 0.059, 0.067)
+GRAFITE = (0.110, 0.125, 0.137)
 CARTAO = (1, 1, 1)
-BORDA = (0.831, 0.831, 0.804)
-TRILHO = (0.906, 0.906, 0.886)
+LINHA = (0.882, 0.878, 0.859)
+TRILHO = (0.914, 0.910, 0.894)
+SOMBRA = (0.898, 0.894, 0.875)
 
 # ------------------------------------------------------------------- medições
 MEDIDAS = {
@@ -138,14 +136,30 @@ def quebrar(txto: str, fonte: str, tam: float, largura: float) -> list[str]:
     return linhas
 
 
-def texto(x, y, txto, fonte=REG, tam=24, cor=TINTA, alinhar="esq"):
+def texto(x, y, txto, fonte=REG, tam=24, cor=TINTA, alinhar="esq", espaco=0.0):
+    """Escreve uma linha. `espaco` abre as letras (só o objeto de texto do
+    ReportLab sabe fazer isso, e aí o alinhamento tem de considerar a abertura)."""
+    txto = _conferir(txto)
     c.setFont(fonte, tam)
     c.setFillColorRGB(*cor)
-    {"centro": c.drawCentredString, "dir": c.drawRightString}.get(alinhar, c.drawString)(x, y, _conferir(txto))
+    if not espaco:
+        {"centro": c.drawCentredString, "dir": c.drawRightString}.get(alinhar, c.drawString)(
+            x, y, txto)
+        return
+    l = larg(txto, fonte, tam) + espaco * max(len(txto) - 1, 0)
+    x = x - l / 2 if alinhar == "centro" else x - l if alinhar == "dir" else x
+    obj = c.beginText(x, y)
+    obj.setFont(fonte, tam)
+    obj.setFillColorRGB(*cor)
+    obj.setCharSpace(espaco)
+    obj.textOut(txto)
+    # Tc é estado de texto do PDF: persiste depois do BT/ET e alargaria TODO o
+    # resto da página. Zerar aqui, depois de mostrar o texto, é obrigatório.
+    obj.setCharSpace(0)
+    c.drawText(obj)
 
 
 def paragrafo(x, y, txto, largura, fonte=REG, tam=24, cor=TINTA, entrelinha=1.40) -> float:
-    """Escreve de cima para baixo a partir da linha de base `y`. Devolve o y da última linha."""
     c.setFont(fonte, tam)
     c.setFillColorRGB(*cor)
     for linha in quebrar(_conferir(txto), fonte, tam, largura):
@@ -158,23 +172,38 @@ def alt_paragrafo(txto, largura, fonte=REG, tam=24, entrelinha=1.40) -> float:
     return len(quebrar(txto, fonte, tam, largura)) * tam * entrelinha
 
 
-def caixa(x, y, l, a, preenche=CARTAO, borda=BORDA, raio=0.4 * cm, espessura=2.2):
-    if preenche:
-        c.setFillColorRGB(*preenche)
+def cartao(x, y, l, a, fundo=CARTAO, borda=LINHA, raio=0.6 * cm, sombra=True):
+    """Cartão com sombra deslocada — o bloco de base do layout."""
+    if sombra:
+        c.setFillColorRGB(*SOMBRA)
+        c.roundRect(x + 0.16 * cm, y - a - 0.16 * cm, l, a, raio, stroke=0, fill=1)
+    c.setFillColorRGB(*fundo)
     if borda:
         c.setStrokeColorRGB(*borda)
-        c.setLineWidth(espessura)
-    c.roundRect(x, y - a, l, a, raio, stroke=1 if borda else 0, fill=1 if preenche else 0)
+        c.setLineWidth(1.8)
+    c.roundRect(x, y - a, l, a, raio, stroke=1 if borda else 0, fill=1)
 
 
-def titulo_secao(x, y, txto, largura, cor=VERDE, tam=40) -> float:
+def faixa_lateral(x, y, a, cor, l=0.32 * cm):
     c.setFillColorRGB(*cor)
-    c.rect(x, y, largura, 0.34 * cm, stroke=0, fill=1)
-    texto(x, y - 1.52 * cm, txto.upper(), BLACK, tam, TINTA)
-    return y - 2.45 * cm
+    c.roundRect(x, y - a, l * 3, a, l, stroke=0, fill=1)
+    c.setFillColorRGB(*CARTAO)
+    c.rect(x + l, y - a, l * 2, a, stroke=0, fill=1)
 
 
-def seta(x1, y1, x2, y2, cor=ACO, espessura=3.4, cabeca=0.4 * cm):
+def secao(x, y, etiqueta, titulo, cor, largura) -> float:
+    """Cabeçalho de seção: ponto + etiqueta pequena, título grande, filete fino."""
+    c.setFillColorRGB(*cor)
+    c.circle(x + 0.3 * cm, y - 0.28 * cm, 0.3 * cm, stroke=0, fill=1)
+    texto(x + 1.05 * cm, y - 0.5 * cm, etiqueta.upper(), BLACK, 21, cor, espaco=2.2)
+    texto(x, y - 2.35 * cm, titulo, BLACK, 40, TINTA)
+    c.setStrokeColorRGB(*LINHA)
+    c.setLineWidth(2)
+    c.line(x, y - 2.95 * cm, x + largura, y - 2.95 * cm)
+    return y - 3.6 * cm
+
+
+def seta(x1, y1, x2, y2, cor=FRACO, espessura=3.0, cabeca=0.38 * cm):
     c.setStrokeColorRGB(*cor)
     c.setLineWidth(espessura)
     c.setLineCap(1)
@@ -189,33 +218,42 @@ def seta(x1, y1, x2, y2, cor=ACO, espessura=3.4, cabeca=0.4 * cm):
     c.drawPath(p, stroke=0, fill=1)
 
 
-def bussola(cx, cy, r, aro=(1, 1, 1), norte=VERMELHO, sul=(0.78, 0.78, 0.76)):
+def bussola(cx, cy, r, aro=(1, 1, 1), norte=VERMELHO, sul=(0.70, 0.71, 0.70)):
     c.setStrokeColorRGB(*aro)
-    c.setLineWidth(r * 0.085)
+    c.setLineWidth(r * 0.075)
     c.circle(cx, cy, r, stroke=1, fill=0)
-    c.setLineWidth(r * 0.05)
+    c.setLineWidth(r * 0.045)
     for i in range(12):
         a = math.pi / 6 * i
-        c.line(cx + r * 0.82 * math.sin(a), cy + r * 0.82 * math.cos(a),
-               cx + r * 0.95 * math.sin(a), cy + r * 0.95 * math.cos(a))
-    for alvo, cor in (((0, r * 0.74), norte), ((0, -r * 0.74), sul)):
+        c.line(cx + r * 0.80 * math.sin(a), cy + r * 0.80 * math.cos(a),
+               cx + r * 0.94 * math.sin(a), cy + r * 0.94 * math.cos(a))
+    for alvo, cor in (((0, r * 0.72), norte), ((0, -r * 0.72), sul)):
         p = c.beginPath()
         p.moveTo(cx + alvo[0], cy + alvo[1])
-        p.lineTo(cx + r * 0.2, cy)
-        p.lineTo(cx - r * 0.2, cy)
+        p.lineTo(cx + r * 0.19, cy)
+        p.lineTo(cx - r * 0.19, cy)
         p.close()
         c.setFillColorRGB(*cor)
         c.drawPath(p, stroke=0, fill=1)
 
 
-def imagem(arquivo, x, y, largura) -> float:
+def celular(arquivo, x, y, largura) -> float:
+    """Captura dentro de uma moldura de aparelho, com os cantos arredondados."""
     img = ImageReader(os.path.join(CAPTURAS, arquivo))
     pw, ph = img.getSize()
     a = largura * ph / pw
+    raio = largura * 0.09
+    c.saveState()
+    c.setFillColorRGB(*SOMBRA)
+    c.roundRect(x + 0.14 * cm, y - a - 0.14 * cm, largura, a, raio, stroke=0, fill=1)
+    p = c.beginPath()
+    p.roundRect(x, y - a, largura, a, raio)
+    c.clipPath(p, stroke=0, fill=0)
     c.drawImage(img, x, y - a, largura, a, mask=None)
-    c.setStrokeColorRGB(*BORDA)
-    c.setLineWidth(1.6)
-    c.rect(x, y - a, largura, a, stroke=1, fill=0)
+    c.restoreState()
+    c.setStrokeColorRGB(*GRAFITE)
+    c.setLineWidth(3.2)
+    c.roundRect(x, y - a, largura, a, raio, stroke=1, fill=0)
     return y - a
 
 
@@ -224,204 +262,236 @@ c.setFillColorRGB(*PAPEL)
 c.rect(0, 0, LARGURA, ALTURA, stroke=0, fill=1)
 
 MARGEM = 4 * cm
-UTIL = LARGURA - 2 * MARGEM          # 82 cm
+UTIL = LARGURA - 2 * MARGEM
 COL_L = 26 * cm
 COLS = [MARGEM, MARGEM + 28 * cm, MARGEM + 56 * cm]
 
-BANDA_ALT = 22 * cm
+BANDA_ALT = 22.2 * cm
 BANDA_BASE = ALTURA - BANDA_ALT
-Y_COL = BANDA_BASE - 2.7 * cm        # topo das colunas
-RODAPE_TOPO = 24.2 * cm
-RODAPE_BASE = 5.6 * cm
+Y_COL = BANDA_BASE - 3.0 * cm
+RODAPE_TOPO = 21.6 * cm
+RODAPE_BASE = 3.8 * cm
 
 # =================================================================== cabeçalho
 c.setFillColorRGB(*ESCURO)
 c.rect(0, BANDA_BASE, LARGURA, BANDA_ALT, stroke=0, fill=1)
-c.setFillColorRGB(*VERDE)
-c.rect(0, BANDA_BASE, LARGURA, 0.42 * cm, stroke=0, fill=1)
+
+# marca d'água: a rosa dos ventos, discreta, atrás do título
+c.saveState()
+# sem recorte, os arcos vazariam da faixa escura e apareceriam como riscos
+# cinzentos sobre o papel claro das colunas
+recorte = c.beginPath()
+recorte.rect(0, BANDA_BASE, LARGURA, BANDA_ALT)
+c.clipPath(recorte, stroke=0, fill=0)
+c.setStrokeColorRGB(0.098, 0.110, 0.122)
+for raio in (9.5 * cm, 13.5 * cm, 17.5 * cm):
+    c.setLineWidth(2.4)
+    c.circle(LARGURA / 2, ALTURA - 10.4 * cm, raio, stroke=1, fill=0)
+for i in range(8):
+    a = math.pi / 4 * i
+    c.setLineWidth(2.0)
+    c.line(LARGURA / 2 + 6.0 * cm * math.sin(a), ALTURA - 10.4 * cm + 6.0 * cm * math.cos(a),
+           LARGURA / 2 + 17.5 * cm * math.sin(a), ALTURA - 10.4 * cm + 17.5 * cm * math.cos(a))
+c.restoreState()
+
+for i, cor in enumerate((VERDE, VERDE_CLARO, LATAO, VERMELHO)):
+    c.setFillColorRGB(*cor)
+    c.rect(i * LARGURA / 4, BANDA_BASE, LARGURA / 4, 0.42 * cm, stroke=0, fill=1)
 
 for lx, rotulo in ((MARGEM, "LOGOTIPO DA UNIVERSIDADE"),
                    (LARGURA - MARGEM - 15.5 * cm, "LOGOTIPO DO CURSO")):
-    c.setStrokeColorRGB(0.27, 0.29, 0.31)
+    c.setStrokeColorRGB(0.231, 0.251, 0.267)
     c.setLineWidth(2.0)
     c.setDash(7, 7)
-    c.roundRect(lx, ALTURA - 6.5 * cm, 15.5 * cm, 4.0 * cm, 0.3 * cm, stroke=1, fill=0)
+    c.roundRect(lx, ALTURA - 5.8 * cm, 15.5 * cm, 3.4 * cm, 0.3 * cm, stroke=1, fill=0)
     c.setDash()
-    texto(lx + 7.75 * cm, ALTURA - 4.75 * cm, rotulo, SEMI, 21, (0.40, 0.43, 0.45), "centro")
+    texto(lx + 7.75 * cm, ALTURA - 4.3 * cm, rotulo, SEMI, 21, (0.376, 0.400, 0.416), "centro")
 
-# a marca encostada no título: largura medida, não chutada
+et = "APLICATIVO DE MOBILIDADE URBANA"
+lw_et = larg(et, BLACK, 22) + 2.4 * len(et) + 2.6 * cm
+c.setStrokeColorRGB(*VERDE_CLARO)
+c.setLineWidth(2.2)
+c.roundRect((LARGURA - lw_et) / 2, ALTURA - 7.9 * cm, lw_et, 1.5 * cm, 0.75 * cm, stroke=1, fill=0)
+texto(LARGURA / 2, ALTURA - 7.42 * cm, et, BLACK, 22, VERDE_CLARO, "centro", espaco=2.4)
+
 TITULO = "TrueCompass"
 lt = larg(TITULO, BLACK, 80)
-conjunto = 2.35 * cm * 2 + 1.5 * cm + lt
+conjunto = 2.3 * cm * 2 + 1.4 * cm + lt
 x0 = (LARGURA - conjunto) / 2
-bussola(x0 + 2.35 * cm, ALTURA - 9.7 * cm, 2.35 * cm)
-texto(x0 + 2.35 * cm * 2 + 1.5 * cm, ALTURA - 10.65 * cm, TITULO, BLACK, 80, (1, 1, 1))
+bussola(x0 + 2.3 * cm, ALTURA - 10.4 * cm, 2.3 * cm)
+texto(x0 + 2.3 * cm * 2 + 1.4 * cm, ALTURA - 11.35 * cm, TITULO, BLACK, 80, (1, 1, 1))
 
-SUB = ("Alocação ótima de motoristas e rota de menor tempo em malha viária real, "
-       "com corretude demonstrada e ganho medido")
-y = ALTURA - 13.6 * cm
-for linha in quebrar(SUB, SEMI, 38, 74 * cm):
+SUB = ("Alocação ótima de motoristas e rota de menor tempo sobre a malha viária real de "
+       "São Paulo, com corretude demonstrada e ganho medido")
+y = ALTURA - 13.9 * cm
+for linha in quebrar(SUB, SEMI, 38, 70 * cm):
     texto(LARGURA / 2, y, linha, SEMI, 38, VERDE_CLARO, "centro")
     y -= 1.55 * cm
 
-c.setStrokeColorRGB(0.21, 0.23, 0.25)
+c.setStrokeColorRGB(0.153, 0.169, 0.188)
 c.setLineWidth(2)
-c.line(MARGEM, ALTURA - 15.9 * cm, LARGURA - MARGEM, ALTURA - 15.9 * cm)
+c.line(MARGEM + 6 * cm, ALTURA - 16.4 * cm, LARGURA - MARGEM - 6 * cm, ALTURA - 16.4 * cm)
 
-y = ALTURA - 17.3 * cm
+y = ALTURA - 17.7 * cm
 for linha in [
     "Bianca Murcela Mascamudo · RA 8261104797      Carolina Chaves · RA 826182449      "
     "Carolina Yukari Kague · RA 8261110898",
     "Gabryela Araujo · RA 826199094      Kauan Sousa · RA 8261113181      "
     "Wildiner Lopes · RA 8261102715",
 ]:
-    texto(LARGURA / 2, y, linha, REG, 25, (0.87, 0.87, 0.85), "centro")
-    y -= 1.45 * cm
+    texto(LARGURA / 2, y, linha, REG, 25, (0.835, 0.843, 0.839), "centro")
+    y -= 1.4 * cm
 
-texto(LARGURA / 2, ALTURA - 19.9 * cm, "Orientador:  Prof. Raulison Resende", SEMI, 27, (1, 1, 1), "centro")
-texto(LARGURA / 2, ALTURA - 21.4 * cm,
+texto(LARGURA / 2, ALTURA - 20.3 * cm, "Orientador:  Prof. Raulison Resende", SEMI, 27,
+      (1, 1, 1), "centro")
+texto(LARGURA / 2, ALTURA - 21.2 * cm,
       "Universidade São Judas Tadeu  ·  Matemática Computacional Aplicada (0064481)  ·  "
-      "Campus ____________  ·  2026/2", SEMI, 25, (0.80, 0.66, 0.44), "centro")
+      "Campus ____________  ·  2026/2", SEMI, 24, (0.769, 0.639, 0.420), "centro")
 
 # ================================================================== COLUNA 1
 x, y = COLS[0], Y_COL
-y = titulo_secao(x, y, "Contexto e problema", COL_L, VERMELHO)
+y = secao(x, y, "o produto", "O aplicativo", VERDE, COL_L)
+
+RECURSOS = [
+    ("Pedir a corrida", "origem pelo GPS ou escolhida no mapa; destino por busca de endereço."),
+    ("Achar quem chega antes", "não o mais perto em linha reta, e sim o de menor tempo real pelas ruas."),
+    ("Acompanhar ao vivo", "o carro anda no mapa e o estado da corrida chega por WebSocket."),
+    ("Pagar só no fim", "o pagamento só existe depois de concluída — o fluxo não deixa pular etapa."),
+]
+for titulo, nota in RECURSOS:
+    a_i = 1.0 * cm + alt_paragrafo(nota, COL_L - 3.6 * cm, REG, 23) + 1.95 * cm
+    cartao(x, y, COL_L, a_i)
+    c.setFillColorRGB(*VERDE)
+    c.circle(x + 1.35 * cm, y - 1.4 * cm, 0.62 * cm, stroke=0, fill=1)
+    c.setStrokeColorRGB(1, 1, 1)
+    c.setLineWidth(3.4)
+    c.setLineCap(1)
+    c.line(x + 1.05 * cm, y - 1.43 * cm, x + 1.29 * cm, y - 1.67 * cm)
+    c.line(x + 1.29 * cm, y - 1.67 * cm, x + 1.71 * cm, y - 1.13 * cm)
+    texto(x + 2.6 * cm, y - 1.6 * cm, titulo, BOLD, 25, TINTA)
+    paragrafo(x + 2.6 * cm, y - 3.05 * cm, nota, COL_L - 3.6 * cm, REG, 23, SUAVE)
+    y -= a_i + 0.6 * cm
+
+y -= 0.9 * cm
+y = secao(x, y, "por que importa", "Contexto e problema", VERMELHO, COL_L)
 
 for titulo, corpo in [
     ("A distância em linha reta mente.",
-     "No cenário medido do projeto, um motorista a 275 m do passageiro leva 5,8 min para "
-     "chegar; outro, a 548 m, leva 1,0 min — o primeiro está do outro lado do rio."),
+     "No cenário medido, um motorista a 275 m do passageiro leva 5,8 min para chegar; "
+     "outro, a 548 m, leva 1,0 min — o primeiro está do outro lado do rio."),
     ("k candidatos, k varreduras do grafo.",
-     "A alocação ingênua roda uma busca de rota completa para cada motorista candidato. "
-     "É computação jogada fora em cada pedido, sob pressão de latência."),
-    ("Semáforo não é detalhe de acabamento.",
-     "Com a espera esperada dentro do peso da aresta, 67% das rotas mudam de traçado. "
-     "Somado só no fim, o atraso devolve a rota errada."),
-    ("Quem paga a conta.",
-     "O passageiro espera mais do que precisaria, o motorista roda sem receber e a "
-     "plataforma paga infraestrutura pelo desperdício."),
+     "A alocação ingênua roda uma busca de rota completa para cada candidato. "
+     "É computação jogada fora em cada pedido."),
 ]:
     c.setFillColorRGB(*VERMELHO)
-    c.circle(x + 0.3 * cm, y - 0.3 * cm, 0.25 * cm, stroke=0, fill=1)
-    texto(x + 1.05 * cm, y - 0.58 * cm, titulo, BOLD, 25, TINTA)
-    y = paragrafo(x + 1.05 * cm, y - 2.0 * cm, corpo, COL_L - 1.05 * cm, REG, 24, SUAVE)
-    y -= 1.6 * cm
+    c.rect(x, y - 0.95 * cm, 0.16 * cm, 1.15 * cm, stroke=0, fill=1)
+    texto(x + 0.9 * cm, y - 0.55 * cm, titulo, BOLD, 25, TINTA)
+    y = paragrafo(x + 0.9 * cm, y - 1.95 * cm, corpo, COL_L - 0.9 * cm, REG, 23, SUAVE)
+    y -= 1.5 * cm
 
-y -= 0.4 * cm
-y = titulo_secao(x, y, "Objetivos", COL_L, VERDE)
+y -= 0.6 * cm
+y = secao(x, y, "o que foi entregue", "Objetivos", LATAO, COL_L)
 
 GERAL = ("Formalizar a malha viária como grafo ponderado direcionado G = (V, E, w), com w em "
          "segundos, e implementar a camada algorítmica que devolve o motorista de menor tempo "
-         "real de chegada e a rota ótima até o destino — com corretude demonstrada "
-         "matematicamente e ganho medido experimentalmente.")
-a_geral = alt_paragrafo(GERAL, COL_L - 2.2 * cm, REG, 24) + 3.2 * cm
-caixa(x, y + 0.5 * cm, COL_L, a_geral, CARTAO, VERDE, espessura=3)
-texto(x + 1.1 * cm, y - 0.65 * cm, "OBJETIVO GERAL", BLACK, 24, VERDE)
-paragrafo(x + 1.1 * cm, y - 2.3 * cm, GERAL, COL_L - 2.2 * cm, REG, 24, TINTA)
-y = y + 0.5 * cm - a_geral - 1.5 * cm
+         "real de chegada e a rota ótima até o destino — com corretude demonstrada e ganho "
+         "medido.")
+a_g = alt_paragrafo(GERAL, COL_L - 2.6 * cm, REG, 23) + 3.0 * cm
+cartao(x, y, COL_L, a_g, GRAFITE, None)
+texto(x + 1.3 * cm, y - 1.5 * cm, "OBJETIVO GERAL", BLACK, 22, VERDE_CLARO, espaco=2.0)
+paragrafo(x + 1.3 * cm, y - 3.0 * cm, GERAL, COL_L - 2.6 * cm, REG, 23, (0.902, 0.906, 0.898))
+y -= a_g + 1.4 * cm
 
-texto(x, y, "OBJETIVOS ESPECÍFICOS — ETAPAS CONCLUÍDAS", BLACK, 24, ACO)
+texto(x, y, "OBJETIVOS ESPECÍFICOS — ETAPAS CONCLUÍDAS", BLACK, 22, SUAVE, espaco=1.6)
 y -= 1.45 * cm
 for i, item in enumerate([
-    "Modelar a malha como grafo direcionado em lista de adjacência, O(V + E), e o ciclo da corrida como DAG.",
-    "Unificar Dijkstra e A* numa só rotina — o Dijkstra é o A* com h = 0 — e provar a heurística admissível e consistente.",
-    "Parear k motoristas com UMA busca no grafo reverso: a distância de p até m no grafo invertido é a de m até p no original.",
-    "Indexar as posições em quadtree e ordenar o fluxo de estados pelo algoritmo de Kahn.",
-    "Apertar a heurística com ALT — marcos e desigualdade triangular — na malha real do OpenStreetMap.",
-    "Validar por oráculo e expor tudo numa aplicação web: API FastAPI e app React com mapa e WebSocket.",
+    "Malha como grafo direcionado em lista de adjacência, O(V + E); ciclo da corrida como DAG.",
+    "Dijkstra e A* na mesma rotina — o Dijkstra é o A* com h = 0 — com heurística provada "
+    "admissível e consistente.",
+"Pareamento de k motoristas com UMA busca no grafo reverso; quadtree no filtro espacial e Kahn no fluxo de estados.",
+    "Heurística ALT: marcos e desigualdade triangular sobre a malha real.",
+    "Aplicação web ponta a ponta: API FastAPI e app React com mapa e tempo real.",
 ], 1):
-    c.setFillColorRGB(*VERDE)
-    c.circle(x + 0.5 * cm, y - 0.26 * cm, 0.5 * cm, stroke=0, fill=1)
-    texto(x + 0.5 * cm, y - 0.55 * cm, str(i), BLACK, 23, (1, 1, 1), "centro")
-    y = paragrafo(x + 1.55 * cm, y, item, COL_L - 1.55 * cm, REG, 24, TINTA)
-    y -= 1.3 * cm
+    c.setFillColorRGB(*LATAO)
+    c.circle(x + 0.48 * cm, y - 0.24 * cm, 0.48 * cm, stroke=0, fill=1)
+    texto(x + 0.48 * cm, y - 0.5 * cm, str(i), BLACK, 22, (1, 1, 1), "centro")
+    y = paragrafo(x + 1.5 * cm, y, item, COL_L - 1.5 * cm, REG, 23, TINTA)
+    y -= 1.25 * cm
 
-y -= 0.6 * cm
-A_MALHA = 9.6 * cm
-caixa(x, y, COL_L, A_MALHA, (0.937, 0.953, 0.941), VERDE_CLARO, espessura=2.6)
-texto(x + 1.1 * cm, y - 1.5 * cm, "A MALHA QUE O SERVIDOR CARREGA", BLACK, 24, VERDE)
-paragrafo(x + 1.1 * cm, y - 3.2 * cm,
-          f"Centro expandido de São Paulo, extraído do OpenStreetMap pela Overpass e podado ao "
-          f"maior componente fortemente conexo: {MEDIDAS['nos']} cruzamentos, "
-          f"{MEDIDAS['arestas']} trechos de rua e {MEDIDAS['semaforos']} semáforos — "
-          f"em memória, em 1,3 s de subida.", COL_L - 2.2 * cm, REG, 23, SUAVE)
-y -= A_MALHA
 FIM_C1 = y
 
 # ================================================================== COLUNA 2
 x, y = COLS[1], Y_COL
-y = titulo_secao(x, y, "Metodologia e arquitetura", COL_L, ACO)
-y = paragrafo(x, y, "Quatro camadas, com as setas de dependência sempre apontando para dentro. "
-                    "A camada matemática não importa ninguém — por isso seus testes rodam sem "
-                    "banco, sem servidor e sem rede.", COL_L, REG, 24, SUAVE)
-y -= 1.5 * cm
+y = secao(x, y, "como foi construído", "Arquitetura", ACO, COL_L)
+
+y = paragrafo(x, y, "Setas de dependência sempre apontando para dentro: a camada matemática "
+                    "não importa ninguém, e por isso roda sem banco, servidor nem rede.",
+              COL_L, REG, 23, SUAVE)
+y -= 1.4 * cm
 
 CAMADAS = [
-    ("frontend/ — app React + TypeScript", "mapa Leaflet, bússola, folha arrastável, WebSocket", VERDE_CLARO),
-    ("backend/api/ — FastAPI", "rotas HTTP e WebSocket; publica só DEPOIS do commit", ACO),
-    ("backend/dominio/ — regras do negócio", "DAG da corrida, alocação otimista, tarifa", LATAO),
-    ("matematica/algoritmos/ — matemática pura", "grafo · A*/Dijkstra · ALT · quadtree · Kahn · matriz · semáforo", VERDE),
+    ("frontend/", "app React + TypeScript", "mapa Leaflet, bússola, folha arrastável, WebSocket", VERDE_CLARO),
+    ("backend/api/", "FastAPI", "rotas HTTP e WebSocket; publica só DEPOIS do commit", ACO),
+    ("backend/dominio/", "regras do negócio", "DAG da corrida, alocação otimista, tarifa", LATAO),
+    ("matematica/algoritmos/", "matemática pura", "grafo · A*/Dijkstra · ALT · quadtree · Kahn · matriz", VERDE),
 ]
-A_CAM, G_CAM = 3.5 * cm, 1.0 * cm
-for i, (nome, nota, cor) in enumerate(CAMADAS):
+A_CAM, G_CAM = 3.9 * cm, 1.0 * cm
+for i, (pasta, papel, nota, cor) in enumerate(CAMADAS):
     cy = y - i * (A_CAM + G_CAM)
-    caixa(x, cy, COL_L, A_CAM, CARTAO, cor, espessura=3)
-    c.setFillColorRGB(*cor)
-    c.rect(x, cy - A_CAM, 0.5 * cm, A_CAM, stroke=0, fill=1)
-    texto(x + 1.1 * cm, cy - 1.35 * cm, nome, BOLD, 24, TINTA)
-    texto(x + 1.1 * cm, cy - 2.72 * cm, nota, REG, 21, SUAVE)
+    cartao(x, cy, COL_L, A_CAM)
+    faixa_lateral(x, cy, A_CAM, cor)
+    texto(x + 1.5 * cm, cy - 1.45 * cm, pasta, BOLD, 24, cor)
+    texto(x + 1.5 * cm + larg(pasta, BOLD, 24) + 0.4 * cm, cy - 1.45 * cm, papel, REG, 23, TINTA)
+    texto(x + 1.5 * cm, cy - 2.9 * cm, nota, REG, 21, SUAVE)
     if i < len(CAMADAS) - 1:
-        seta(x + COL_L / 2, cy - A_CAM - 0.12 * cm, x + COL_L / 2, cy - A_CAM - G_CAM + 0.18 * cm, ACO, 3.6)
-y -= len(CAMADAS) * A_CAM + (len(CAMADAS) - 1) * G_CAM
-y -= 1.3 * cm
-texto(x, y, "Matriz de adjacência V×V mediu 1.067× mais memória: descartada.", REG, 21, SUAVE)
-y -= 2.0 * cm
-
-texto(x, y, "O CAMINHO DE UM PEDIDO DE CORRIDA", BLACK, 25, TINTA)
-y -= 1.7 * cm
-PIPE = [
-    ("1", "Pedido", "o passageiro marca origem e destino", VERDE),
-    ("2", "Quadtree", "filtra os motoristas do entorno em O(log n + k)", LATAO),
-    ("3", "Busca reversa", "UMA busca no grafo invertido mede o tempo real de todos", VERMELHO),
-    ("4", "A* com ALT", "marcos + desigualdade triangular devolvem a rota ótima", VERDE),
-    ("5", "DAG da corrida", "a transição de estado é validada antes de existir", ACO),
-    ("6", "Commit, e só então WebSocket", "o cliente nunca vê estado que o rollback desfez", VERDE_CLARO),
-]
-A_PIPE, G_PIPE = 3.9 * cm, 0.8 * cm
-for i, (num, nome, nota, cor) in enumerate(PIPE):
-    caixa(x, y, COL_L, A_PIPE, CARTAO, BORDA, espessura=2)
-    c.setFillColorRGB(*cor)
-    c.circle(x + 1.3 * cm, y - 1.35 * cm, 0.75 * cm, stroke=0, fill=1)
-    texto(x + 1.3 * cm, y - 1.68 * cm, num, BLACK, 29, (1, 1, 1), "centro")
-    texto(x + 2.6 * cm, y - 1.6 * cm, nome, BOLD, 25, cor)
-    paragrafo(x + 2.6 * cm, y - 3.0 * cm, nota, COL_L - 3.2 * cm, REG, 21, SUAVE, 1.25)
-    y -= A_PIPE
-    if i < len(PIPE) - 1:
-        seta(x + 1.3 * cm, y - 0.1 * cm, x + 1.3 * cm, y - G_PIPE + 0.15 * cm, ACO, 3.2)
-        y -= G_PIPE
-
-y -= 1.5 * cm
-texto(x, y, "DA MATRIZ DE CÉLULAS AO GRAFO PONDERADO", BLACK, 25, TINTA)
+        seta(x + COL_L / 2, cy - A_CAM - 0.08 * cm, x + COL_L / 2, cy - A_CAM - G_CAM + 0.22 * cm)
+y -= len(CAMADAS) * A_CAM + (len(CAMADAS) - 1) * G_CAM + 1.35 * cm
+texto(x, y, "Matriz de adjacência V×V mediu 1.067× mais memória: descartada.", REG, 21, FRACO)
 y -= 1.6 * cm
-A_MAT = 10.9 * cm
-caixa(x, y, COL_L, A_MAT, CARTAO, BORDA, espessura=2)
+
+y = secao(x, y, "o motor", "Como uma corrida acontece", VERDE, COL_L)
+PIPE = [
+    ("Pedido", "o passageiro marca origem e destino", VERDE_CLARO),
+    ("Quadtree", "filtra os motoristas do entorno em O(log n + k)", LATAO),
+    ("Busca reversa", "UMA busca no grafo invertido mede o tempo real de todos", VERMELHO),
+    ("A* com ALT", "marcos e desigualdade triangular devolvem a rota ótima", VERDE),
+    ("DAG da corrida", "a transição de estado é validada antes de existir", ACO),
+    ("Commit, e só então WebSocket", "o cliente nunca vê estado que o rollback desfez", VERDE_CLARO),
+]
+A_P, G_P = 3.5 * cm, 0.65 * cm
+for i, (nome, nota, cor) in enumerate(PIPE):
+    cartao(x, y, COL_L, A_P)
+    c.setFillColorRGB(*cor)
+    c.roundRect(x + 0.9 * cm, y - 2.3 * cm, 1.6 * cm, 1.6 * cm, 0.48 * cm, stroke=0, fill=1)
+    texto(x + 1.7 * cm, y - 1.85 * cm, str(i + 1), BLACK, 27, (1, 1, 1), "centro")
+    texto(x + 3.1 * cm, y - 1.4 * cm, nome, BOLD, 24, TINTA)
+    paragrafo(x + 3.1 * cm, y - 2.7 * cm, nota, COL_L - 3.8 * cm, REG, 21, SUAVE, 1.25)
+    y -= A_P
+    if i < len(PIPE) - 1:
+        seta(x + 1.7 * cm, y - 0.04 * cm, x + 1.7 * cm, y - G_P + 0.2 * cm, FRACO, 2.8)
+        y -= G_P
+
+y -= 1.6 * cm
+y = secao(x, y, "o mapa", "Da matriz ao grafo", LATAO, COL_L)
+A_MAT = 10.6 * cm
+cartao(x, y, COL_L, A_MAT)
 
 GRADE = [".A..", ".AS.", "#A..", ".A>."]
 cel = 1.35 * cm
-gx, gy = x + 1.2 * cm, y - 1.3 * cm
-CORES_CEL = {".": (0.93, 0.93, 0.91), "A": (0.83, 0.88, 0.85), "S": (0.97, 0.87, 0.87),
-             "#": (0.78, 0.78, 0.76), ">": (0.94, 0.91, 0.84)}
+gx, gy = x + 1.4 * cm, y - 1.4 * cm
+CORES_CEL = {".": (0.945, 0.941, 0.929), "A": (0.839, 0.898, 0.859), "S": (0.976, 0.871, 0.882),
+             "#": (0.776, 0.780, 0.769), ">": (0.953, 0.914, 0.831)}
 for i, linha in enumerate(GRADE):
     for j, ch in enumerate(linha):
         px, py = gx + j * cel, gy - i * cel
         c.setFillColorRGB(*CORES_CEL[ch])
-        c.setStrokeColorRGB(*BORDA)
+        c.setStrokeColorRGB(*LINHA)
         c.setLineWidth(1.4)
         c.rect(px, py - cel, cel, cel, stroke=1, fill=1)
         texto(px + cel / 2, py - cel * 0.7, ch, MONO, 21, ACO, "centro")
 
-seta(gx + 4 * cel + 0.6 * cm, gy - 2 * cel, gx + 4 * cel + 2.2 * cm, gy - 2 * cel, ACO, 4)
-nx, ny = gx + 4 * cel + 3.3 * cm, gy - 0.8 * cm
+seta(gx + 4 * cel + 0.7 * cm, gy - 2 * cel, gx + 4 * cel + 2.4 * cm, gy - 2 * cel, ACO, 3.8)
+nx, ny = gx + 4 * cel + 3.5 * cm, gy - 0.8 * cm
 PONTOS = [(0, 0), (1.8 * cm, 0.2 * cm), (0.3 * cm, -1.9 * cm), (2.2 * cm, -2.2 * cm), (1.1 * cm, -3.9 * cm)]
 c.setStrokeColorRGB(*ACO)
 c.setLineWidth(2.6)
@@ -431,126 +501,130 @@ for k, (px, py) in enumerate(PONTOS):
     c.setFillColorRGB(*(VERMELHO if k == 3 else VERDE))
     c.circle(nx + px, ny + py, 0.4 * cm, stroke=0, fill=1)
 
-texto(x + 1.2 * cm, y - 7.5 * cm,
+texto(x + 1.4 * cm, y - 7.5 * cm,
       "Um caractere = uma célula.   .  rua     A  avenida     S  semáforo", REG, 21, SUAVE)
-texto(x + 1.2 * cm, y - 8.7 * cm, ">  mão única     #  intransponível", REG, 21, SUAVE)
-texto(x + 1.2 * cm, y - 9.7 * cm, "Espera esperada no semáforo:   E[espera] = r² / 2c", BOLD, 24, VERMELHO)
-texto(x + 1.2 * cm, y - 10.7 * cm, "entra no peso da aresta que CHEGA ao cruzamento.", REG, 21, SUAVE)
+texto(x + 1.4 * cm, y - 8.6 * cm, ">  mão única     #  intransponível", REG, 21, SUAVE)
+c.setFillColorRGB(0.976, 0.941, 0.945)
+c.roundRect(x + 1.2 * cm, y - 10.2 * cm, COL_L - 2.4 * cm, 1.6 * cm, 0.35 * cm, stroke=0, fill=1)
+texto(x + 1.7 * cm, y - 9.7 * cm,
+      "E[espera] = r² / 2c  no peso da aresta que CHEGA ao cruzamento", BOLD, 22, VERMELHO)
 y -= A_MAT
 FIM_C2 = y
 
 # ================================================================== COLUNA 3
 x, y = COLS[2], Y_COL
-y = titulo_secao(x, y, "Resultados e demonstração", COL_L, VERDE)
-y = paragrafo(x, y, f"Medido na malha real: {MEDIDAS['nos']} cruzamentos de São Paulo. Em todos os "
-                    "casos a rota devolvida é a mesma — o ganho é de busca, nunca de qualidade.",
-              COL_L, REG, 24, SUAVE)
-y -= 1.4 * cm
+y = secao(x, y, "o que foi medido", "Resultados", VERDE, COL_L)
+y = paragrafo(x, y, f"Na malha real: {MEDIDAS['nos']} cruzamentos, {MEDIDAS['arestas']} trechos "
+                    f"de rua e {MEDIDAS['semaforos']} semáforos. Em todos os casos a rota "
+                    "devolvida é a mesma — o ganho é de busca, nunca de qualidade.",
+              COL_L, REG, 23, SUAVE)
+y -= 1.5 * cm
 
-TILES = [("14,3×", "menos nós na rota\nde Dijkstra para A* com ALT", VERDE),
-         ("10,7×", "menos nós no pareamento\nde k buscas para 1 reversa", VERMELHO),
-         ("154,8×", "menos comparações\nda varredura linear à quadtree", LATAO),
-         ("0", "rotas subótimas\nem toda a validação", ACO)]
-tw, th = (COL_L - 1.0 * cm) / 2, 5.8 * cm
-for i, (num, nota, cor) in enumerate(TILES):
-    tx = x + (i % 2) * (tw + 1.0 * cm)
-    ty = y - (i // 2) * (th + 1.0 * cm)
-    caixa(tx, ty, tw, th, CARTAO, cor, espessura=3)
-    texto(tx + tw / 2, ty - 2.55 * cm, num, BLACK, 56, cor, "centro")
-    for k, linha in enumerate(nota.split("\n")):
-        texto(tx + tw / 2, ty - 3.95 * cm - k * 1.1 * cm, linha, REG, 21, SUAVE, "centro")
-y -= 2 * th + 1.0 * cm + 2.2 * cm
+TILES = [("14,3×", "menos nós na rota", "de Dijkstra para A* com ALT", VERDE_CLARO),
+         ("10,7×", "menos nós no pareamento", "de k buscas para 1 reversa", VERMELHO),
+         ("154,8×", "menos comparações", "da varredura linear à quadtree", LATAO),
+         ("0", "rotas subótimas", "em toda a validação", (0.60, 0.65, 0.68))]
+tw, th = (COL_L - 0.9 * cm) / 2, 6.0 * cm
+for i, (num, nota, det, cor) in enumerate(TILES):
+    tx = x + (i % 2) * (tw + 0.9 * cm)
+    ty = y - (i // 2) * (th + 0.9 * cm)
+    cartao(tx, ty, tw, th, GRAFITE, None, 0.55 * cm)
+    c.setFillColorRGB(*cor)
+    c.roundRect(tx, ty - th, 0.3 * cm, th, 0.15 * cm, stroke=0, fill=1)
+    texto(tx + tw / 2, ty - 2.6 * cm, num, BLACK, 58, cor, "centro")
+    texto(tx + tw / 2, ty - 4.0 * cm, nota, SEMI, 22, (0.937, 0.937, 0.925), "centro")
+    texto(tx + tw / 2, ty - 5.1 * cm, det, REG, 21, (0.631, 0.651, 0.659), "centro")
+y -= 2 * th + 0.9 * cm + 1.8 * cm
 
-texto(x, y, "NÓS EXPANDIDOS EM 25 ROTAS ORIGEM–DESTINO", BLACK, 25, TINTA)
+texto(x, y, "NÓS EXPANDIDOS EM 25 ROTAS ORIGEM–DESTINO", BLACK, 22, SUAVE, espaco=1.6)
 y -= 1.6 * cm
-A_GRAF = 11.1 * cm
-caixa(x, y, COL_L, A_GRAF, CARTAO, BORDA, espessura=2)
-BARRAS = [("Dijkstra", MEDIDAS["dijkstra_nos"], ACO, ""),
+A_GRAF = 10.9 * cm
+cartao(x, y, COL_L, A_GRAF)
+BARRAS = [("Dijkstra", MEDIDAS["dijkstra_nos"], (0.42, 0.45, 0.47), ""),
           ("A* haversine", MEDIDAS["haversine_nos"], LATAO, f"{MEDIDAS['haversine_ms']} ms/rota"),
           ("A* com ALT", MEDIDAS["alt_nos"], VERDE, f"{MEDIDAS['alt_ms']} ms/rota")]
 maior = max(v for _, v, _, _ in BARRAS)
-bx, bw = x + 1.2 * cm, COL_L - 2.4 * cm
+bx, bw = x + 1.3 * cm, COL_L - 2.6 * cm
 for i, (nome, valor, cor, nota) in enumerate(BARRAS):
-    by = y - 1.8 * cm - i * 2.9 * cm
+    by = y - 1.8 * cm - i * 2.8 * cm
     texto(bx, by, nome, BOLD, 23, TINTA)
     texto(bx + bw, by, f"{valor:,}".replace(",", ".") + (f"   ·   {nota}" if nota else ""),
           SEMI, 22, cor, "dir")
     c.setFillColorRGB(*TRILHO)
-    c.roundRect(bx, by - 1.7 * cm, bw, 1.1 * cm, 0.18 * cm, stroke=0, fill=1)
+    c.roundRect(bx, by - 1.75 * cm, bw, 1.15 * cm, 0.3 * cm, stroke=0, fill=1)
     c.setFillColorRGB(*cor)
-    c.roundRect(bx, by - 1.7 * cm, bw * valor / maior, 1.1 * cm, 0.18 * cm, stroke=0, fill=1)
-texto(bx, y - A_GRAF + 0.95 * cm,
-      "Mesmo custo ótimo nas três — conferido rota a rota contra o Dijkstra.", REG, 21, SUAVE)
-y -= A_GRAF + 2.0 * cm
+    c.roundRect(bx, by - 1.75 * cm, bw * valor / maior, 1.15 * cm, 0.3 * cm, stroke=0, fill=1)
+texto(bx, y - A_GRAF + 1.0 * cm,
+      "Mesmo custo ótimo nas três — conferido rota a rota contra o Dijkstra.", REG, 21, FRACO)
+y -= A_GRAF + 1.7 * cm
 
-texto(x, y, "O APLICATIVO FUNCIONANDO", BLACK, 25, TINTA)
-y -= 1.5 * cm
+y = secao(x, y, "demonstração", "O app funcionando", ACO, COL_L)
 lw = 8.1 * cm
-base, fim = y, y
-for i, (arq, legenda) in enumerate([("algoritmo.png", "A* × Dijkstra na rota"),
-                                    ("alocada.png", "motorista alocado"),
-                                    ("motorista-corrida.png", "lado do motorista")]):
+base, fim = y + 0.5 * cm, y
+for i, (arq, legenda) in enumerate([("algoritmo.png", "A* × Dijkstra na rota pedida"),
+                                    ("alocada.png", "motorista alocado, ao vivo"),
+                                    ("motorista-corrida.png", "o lado do motorista")]):
     ix = x + 0.25 * cm + i * (lw + 0.6 * cm)
-    fim = imagem(arq, ix, base, lw)
-    texto(ix + lw / 2, fim - 1.1 * cm, legenda, REG, 21, SUAVE, "centro")
-y = fim - 3.0 * cm
+    fim = celular(arq, ix, base, lw)
+    for k, linha in enumerate(quebrar(legenda, REG, 21, lw + 0.5 * cm)):
+        texto(ix + lw / 2, fim - 1.2 * cm - k * 1.05 * cm, linha, REG, 21, SUAVE, "centro")
+y = fim - 3.9 * cm
 
-texto(x, y, "INDICADORES DE ENTREGA", BLACK, 25, TINTA)
-y -= 1.5 * cm
 INDS = [("Semáforos reais no peso das arestas", f"{MEDIDAS['semaforos']} · 67% das rotas mudam de traçado"),
         ("Pré-processamento do ALT", "16 marcos · 10,3 s · artefato de 29,8 MB"),
         ("Testes automatizados", f"{MEDIDAS['testes']} verdes + {MEDIDAS['e2e']} no navegador"),
         ("Estratégia de validação", "oráculo: Dijkstra confere o A*, varredura confere a quadtree")]
-A_IND = len(INDS) * 2.35 * cm + 0.5 * cm
-caixa(x, y + 0.45 * cm, COL_L, A_IND, CARTAO, BORDA, espessura=2)
+A_IND = len(INDS) * 2.4 * cm + 2.5 * cm
+cartao(x, y, COL_L, A_IND)
+texto(x + 1.3 * cm, y - 1.6 * cm, "INDICADORES DE ENTREGA", BLACK, 22, SUAVE, espaco=1.6)
 for i, (chave, valor) in enumerate(INDS):
-    iy = y - i * 2.35 * cm
+    iy = y - 3.1 * cm - i * 2.4 * cm
     c.setFillColorRGB(*VERDE)
-    c.circle(x + 1.05 * cm, iy - 0.22 * cm, 0.21 * cm, stroke=0, fill=1)
-    texto(x + 1.7 * cm, iy - 0.5 * cm, chave, SEMI, 22, TINTA)
-    texto(x + 1.7 * cm, iy - 1.65 * cm, valor, REG, 21, SUAVE)
-y = y + 0.45 * cm - A_IND
+    c.circle(x + 1.45 * cm, iy + 0.22 * cm, 0.2 * cm, stroke=0, fill=1)
+    texto(x + 2.1 * cm, iy, chave, SEMI, 22, TINTA)
+    texto(x + 2.1 * cm, iy - 1.15 * cm, valor, REG, 21, SUAVE)
+y -= A_IND
 FIM_C3 = y
 
 # ====================================================================== rodapé
-c.setFillColorRGB(0.925, 0.925, 0.906)
-c.rect(MARGEM, RODAPE_BASE, UTIL, RODAPE_TOPO - RODAPE_BASE, stroke=0, fill=1)
-c.setFillColorRGB(*VERDE)
-c.rect(MARGEM, RODAPE_TOPO - 0.42 * cm, UTIL, 0.42 * cm, stroke=0, fill=1)
+cartao(MARGEM, RODAPE_TOPO, UTIL, RODAPE_TOPO - RODAPE_BASE, GRAFITE, None, 0.7 * cm, sombra=False)
+for i, cor in enumerate((VERDE, VERDE_CLARO, LATAO, VERMELHO)):
+    c.setFillColorRGB(*cor)
+    c.rect(MARGEM + i * UTIL / 4, RODAPE_TOPO - 0.4 * cm, UTIL / 4, 0.4 * cm, stroke=0, fill=1)
 
-fx, fy = MARGEM + 2.0 * cm, RODAPE_TOPO - 1.4 * cm
-L_CONC, L_REF, L_QR = 36 * cm, 26 * cm, 11.2 * cm
+fx, fy = MARGEM + 2.4 * cm, RODAPE_TOPO - 1.9 * cm
+L_CONC, L_REF, L_QR = 35 * cm, 25 * cm, 10.4 * cm
 
-texto(fx, fy - 1.3 * cm, "CONSIDERAÇÕES FINAIS", BLACK, 36, TINTA)
-yy = paragrafo(fx, fy - 3.6 * cm,
+texto(fx, fy - 0.5 * cm, "CONSIDERAÇÕES FINAIS", BLACK, 22, VERDE_CLARO, espaco=2.2)
+yy = paragrafo(fx, fy - 2.8 * cm,
                "O ganho veio de trocar o algoritmo, não de comprar máquina: as mesmas rotas, com "
                "uma fração da busca. O que sustenta a troca é a demonstração — admissibilidade e "
                "consistência da heurística, dualidade do grafo reverso, aciclicidade do fluxo — e "
                "não a medição isolada. O protótipo roda ponta a ponta sobre ruas reais.",
-               L_CONC, REG, 24, TINTA)
-yy -= 1.5 * cm
-texto(fx, yy, "TRABALHOS FUTUROS", BLACK, 24, ACO)
+               L_CONC, REG, 23, (0.918, 0.922, 0.914))
+yy -= 1.6 * cm
+texto(fx, yy, "TRABALHOS FUTUROS", BLACK, 22, LATAO, espaco=2.0)
 yy -= 1.4 * cm
 for item in ["Semáforos dependentes do tempo (onda verde), provando antes a propriedade FIFO.",
              "Algoritmo húngaro para despacho em lote, com vários pedidos simultâneos.",
              "Publicação: front-end no Vercel, back-end no Railway com a malha em memória."]:
     c.setFillColorRGB(*LATAO)
-    c.circle(fx + 0.28 * cm, yy + 0.24 * cm, 0.21 * cm, stroke=0, fill=1)
-    yy = paragrafo(fx + 0.95 * cm, yy, item, L_CONC - 0.95 * cm, REG, 23, SUAVE)
-    yy -= 1.2 * cm
+    c.circle(fx + 0.25 * cm, yy + 0.24 * cm, 0.2 * cm, stroke=0, fill=1)
+    yy = paragrafo(fx + 0.9 * cm, yy, item, L_CONC - 0.9 * cm, REG, 22, (0.800, 0.812, 0.808))
+    yy -= 1.15 * cm
 
-yy -= 0.9 * cm
-c.setStrokeColorRGB(*BORDA)
+yy -= 0.6 * cm
+c.setStrokeColorRGB(0.200, 0.216, 0.231)
 c.setLineWidth(2)
-c.line(fx, yy + 0.4 * cm, fx + L_CONC, yy + 0.4 * cm)
-paragrafo(fx, yy - 1.0 * cm,
+c.line(fx, yy + 0.5 * cm, fx + L_CONC, yy + 0.5 * cm)
+paragrafo(fx, yy - 0.9 * cm,
           "Pilha: Python 3.11 · FastAPI · SQLAlchemy · React + TypeScript · Leaflet · WebSocket. "
           "Os algoritmos são de implementação própria — nenhuma biblioteca de grafos.",
-          L_CONC, REG, 22, SUAVE)
+          L_CONC, REG, 21, (0.600, 0.616, 0.620))
 
-rx = fx + L_CONC + 2.0 * cm
-texto(rx, fy - 1.3 * cm, "REFERÊNCIAS", BLACK, 36, TINTA)
-yy = fy - 3.5 * cm
+rx = fx + L_CONC + 2.2 * cm
+texto(rx, fy - 0.5 * cm, "REFERÊNCIAS", BLACK, 22, VERDE_CLARO, espaco=2.2)
+yy = fy - 2.7 * cm
 for ref in [
     "CORMEN, T. H. et al. Algoritmos: teoria e prática. 4. ed. Rio de Janeiro: LTC, 2024.",
     "HART, P. E.; NILSSON, N. J.; RAPHAEL, B. A formal basis for the heuristic determination of "
@@ -559,12 +633,12 @@ for ref in [
     "GOLDBERG, A. V.; HARRELSON, C. Computing the shortest path: A* search meets graph theory. "
     "In: SODA, 16., 2005, Vancouver. Proceedings. Philadelphia: SIAM, 2005. p. 156-165.",
 ]:
-    yy = paragrafo(rx, yy, ref, L_REF, REG, 22, SUAVE, 1.3)
-    yy -= 1.15 * cm
-texto(rx, yy - 0.2 * cm, "Malha: OpenStreetMap contributors (ODbL),", REG, 21, SUAVE)
-texto(rx, yy - 1.3 * cm, "extraída via Overpass API.", REG, 21, SUAVE)
+    yy = paragrafo(rx, yy, ref, L_REF, REG, 21, (0.788, 0.800, 0.796), 1.3)
+    yy -= 1.1 * cm
+texto(rx, yy - 0.2 * cm, "Malha: OpenStreetMap contributors (ODbL), via Overpass API.",
+      REG, 21, (0.600, 0.616, 0.620))
 
-qx = LARGURA - MARGEM - 2.0 * cm - L_QR
+qx = LARGURA - MARGEM - 2.4 * cm - L_QR
 qy = RODAPE_BASE + 5.2 * cm
 try:
     import qrcode
@@ -574,7 +648,8 @@ try:
     qr.make(fit=True)
     matriz = qr.get_matrix()
     c.setFillColorRGB(1, 1, 1)
-    c.rect(qx - 0.55 * cm, qy - 0.55 * cm, L_QR + 1.1 * cm, L_QR + 1.1 * cm, stroke=0, fill=1)
+    c.roundRect(qx - 0.6 * cm, qy - 0.6 * cm, L_QR + 1.2 * cm, L_QR + 1.2 * cm, 0.4 * cm,
+                stroke=0, fill=1)
     passo = L_QR / len(matriz)
     c.setFillColorRGB(*ESCURO)
     for i, linha in enumerate(matriz):
@@ -585,8 +660,10 @@ try:
 except ImportError:
     print("aviso: módulo qrcode ausente — QR não desenhado (pip install qrcode).")
 
-texto(qx + L_QR / 2, qy - 2.0 * cm, "Repositório, documentação e protótipo", SEMI, 23, TINTA, "centro")
-texto(qx + L_QR / 2, qy - 3.2 * cm, "github.com/Cm-Kauan/Prototipo-TrueCompass", REG, 21, SUAVE, "centro")
+texto(qx + L_QR / 2, qy - 1.9 * cm, "Repositório, documentação e protótipo", SEMI, 22,
+      (0.937, 0.937, 0.925), "centro")
+texto(qx + L_QR / 2, qy - 3.05 * cm, "github.com/Cm-Kauan/Prototipo-TrueCompass", REG, 21,
+      (0.631, 0.651, 0.659), "centro")
 
 c.showPage()
 c.save()

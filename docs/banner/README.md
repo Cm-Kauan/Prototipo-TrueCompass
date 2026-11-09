@@ -24,18 +24,19 @@ pedido pela disciplina.
 ## Como está organizado
 
 ```
-cabeçalho (faixa escura, largura inteira)
-    logotipos · TrueCompass · subtítulo · integrantes e RAs · orientador
-    universidade · unidade curricular · campus · período letivo
+cabeçalho (faixa escura, largura inteira, rosa dos ventos de marca d'água)
+    logotipos · etiqueta · TrueCompass · subtítulo · integrantes e RAs
+    orientador · universidade · unidade curricular · campus · período letivo
 
 coluna 1                  coluna 2                    coluna 3
-CONTEXTO E PROBLEMA       METODOLOGIA E ARQUITETURA   RESULTADOS E DEMONSTRAÇÃO
-OBJETIVOS                   diagrama das 4 camadas      números medidos
-  geral e específicos       pipeline de uma corrida     gráfico de nós expandidos
-A MALHA QUE O SERVIDOR      da matriz ao grafo          capturas do app
-CARREGA                                                 indicadores de entrega
+O APLICATIVO              ARQUITETURA                 RESULTADOS
+  o que o app faz           as 4 camadas                números medidos
+CONTEXTO E PROBLEMA       COMO UMA CORRIDA ACONTECE   gráfico de nós expandidos
+OBJETIVOS                   os 6 passos               O APP FUNCIONANDO
+  geral e específicos     DA MATRIZ AO GRAFO            3 telas reais
+                                                      INDICADORES DE ENTREGA
 
-rodapé (largura inteira)
+rodapé (cartão escuro, largura inteira)
     CONSIDERAÇÕES FINAIS e trabalhos futuros · REFERÊNCIAS · QR do repositório
 ```
 
@@ -52,8 +53,8 @@ Montserrat, nos corpos exigidos:
 |---|---|
 | Título | 80 pt |
 | Títulos de seção | 36 a 40 pt |
-| Corpo e bullets | 23 a 26 pt |
-| Legendas e notas | 21 a 22 pt |
+| Corpo e bullets | 21 a 25 pt |
+| Legendas, etiquetas e notas | 21 a 22 pt |
 
 Nada abaixo de 20 pt, inclusive nas legendas das capturas.
 
