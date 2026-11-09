@@ -40,6 +40,8 @@ class Config:
         # Mapa em matriz: fonte preferencial, por ser editavel e versionavel.
         self.arquivo_matriz = _caminho("MAPA_MATRIZ", os.path.join(PASTA_MATEMATICA, "mapas", "centro.mapa"))
         self.considerar_semaforos = os.getenv("SEMAFOROS", "1") not in ("0", "false")
+        # Marcos do ALT, gerados por `python3 -m infra.preparar_alt`.
+        self.arquivo_alt = _caminho("ALT_ARQUIVO", "dados/alt.bin")
         self.origens_cors = [
             o.strip() for o in os.getenv("CORS_ORIGENS", "http://localhost:5173").split(",")
             if o.strip()

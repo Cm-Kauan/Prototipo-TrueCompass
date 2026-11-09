@@ -24,6 +24,11 @@ def obter_indice_nos(conexao: HTTPConnection):
     return conexao.app.state.indice_nos
 
 
+def obter_alt(conexao: HTTPConnection):
+    """Marcos pre-calculados do ALT, ou None se o artefato nao existir."""
+    return getattr(conexao.app.state, "alt", None)
+
+
 def obter_matriz(conexao: HTTPConnection):
     """Matriz do mapa, ou None quando a malha veio do OpenStreetMap."""
     return getattr(conexao.app.state, "matriz", None)

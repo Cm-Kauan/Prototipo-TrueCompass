@@ -12,6 +12,12 @@ venv/
 # Extrato cru da Overpass: grande e reproduzivel pelo CLI.
 backend/dados/osm_bruto.json
 
+# Marcos do ALT: 30 MB DERIVADOS de backend/dados/malha.json em ~12s. Commitar
+# deixaria o peso em todo clone, para sempre. Gere com `python3 -m infra.preparar_alt`
+# (de dentro de backend/); o artefato traz impressao digital e e recusado se
+# ficar desatualizado.
+backend/dados/alt.bin
+
 # O artefato da malha É versionado de proposito: o deploy no Railway precisa
 # dele no boot, e gerá-lo exigiria bater na Overpass durante o build.
 !backend/dados/malha.json

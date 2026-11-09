@@ -95,6 +95,23 @@ Roda **uma vez**, offline, e gera `backend/dados/malha.json` (versionado). O
 servidor lê esse arquivo no boot — nunca consulta a Overpass em produção.
 Caixas grandes demoram e a Overpass pode recusar; comece por um bairro.
 
+## Acelerar o cálculo de rota (ALT)
+
+Depois de importar a malha, pré-calcule os marcos:
+
+```bash
+cd backend
+python3 -m infra.preparar_alt --marcos 16
+```
+
+Roda uma vez (~12 s na malha de São Paulo) e grava `backend/dados/alt.bin` (~30 MB).
+O servidor carrega no boot e o cálculo de rota fica **14× mais rápido** —
+157 ms para 16 ms por rota.
+
+Sem o arquivo o sistema continua correto, usando a heurística haversine.
+Se a malha mudar, **regere**: o artefato traz impressão digital e um arquivo
+desatualizado é recusado no boot, com aviso no log.
+
 ## Variáveis de ambiente
 
 Copie `backend/.env.exemplo` para `backend/.env`. Só `JWT_SECRET` é realmente

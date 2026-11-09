@@ -97,6 +97,36 @@ def caixa_da_malha(grafo):
             "norte": max(latitudes), "leste": max(longitudes)}
 
 
+def carregar_alt(config, grafo):
+    """Marcos do ALT, se houver artefato COMPATIVEL com esta malha.
+
+    A impressao digital e conferida de proposito: um artefato gerado para
+    outro mapa daria limites de um grafo diferente, e o A* devolveria rota
+    subotima sem erro algum. Preferimos cair na haversine, que e correta.
+    """
+    if not os.path.exists(config.arquivo_alt):
+        registrador.info("sem %s: A* usara a heuristica haversine. "
+                         "Gere com `python3 -m infra.preparar_alt`.",
+                         config.arquivo_alt)
+        return None
+    try:
+        from algoritmos.alt import ALT
+        alt = ALT.carregar(config.arquivo_alt)
+    except (ValueError, OSError, EOFError) as erro:
+        registrador.warning("nao foi possivel ler %s (%s): usando haversine",
+                            config.arquivo_alt, erro)
+        return None
+
+    if not alt.confere(grafo):
+        registrador.warning(
+            "%s foi gerado para OUTRA malha: ignorado. Regere com "
+            "`python3 -m infra.preparar_alt`.", config.arquivo_alt)
+        return None
+
+    registrador.info("ALT: %d marcos, %d ativos por consulta", len(alt), alt.ativos)
+    return alt
+
+
 @asynccontextmanager
 async def ciclo_de_vida(app: FastAPI):
     config = obter_config()
@@ -123,6 +153,10 @@ async def ciclo_de_vida(app: FastAPI):
     registrador.info("grafo reverso e indice espacial prontos "
                      "(velocidade maxima medida: %.0f km/h)",
                      app.state.grafo.velocidade_maxima_kmh())
+
+    # Marcos do ALT: heuristica muito mais apertada que a haversine. Opcional --
+    # sem o artefato, o A* segue correto, so explorando mais.
+    app.state.alt = carregar_alt(config, app.state.grafo)
 
     app.state.registro = RegistroMotoristas()
     app.state.conexoes = GerenciadorConexoes()

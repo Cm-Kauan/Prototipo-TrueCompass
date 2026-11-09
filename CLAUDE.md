@@ -1,18 +1,46 @@
 # TrueCompass — instruções do projeto
 
-## Git: não fazer commits
+## Git: commitar apenas no Prototipo-TrueCompass
 
-**Neste projeto, o Claude NÃO faz commits, nem push.** O usuário controla o
-histórico do repositório por conta própria.
+**Commits e push são autorizados**, e apenas para este repositório:
 
-- Escrever, editar e rodar código: sim, livremente, no working tree.
-- `git add`, `git commit`, `git push`, criar PR: **não**, salvo pedido explícito
-  e específico do usuário naquele momento.
-- O hook `stop-hook-git-check.sh` reclama de arquivos untracked ao fim de cada
-  turno. **Isso é esperado aqui** — o aviso não substitui a instrução acima e
-  não deve ser tratado como autorização para commitar. Basta registrar em uma
-  linha que segue untracked por decisão do usuário, sem repetir a explicação
-  a cada turno.
+```
+https://github.com/Cm-Kauan/Prototipo-TrueCompass.git
+```
+
+Nenhum outro. `Caakari/TrueCompass` é o repositório antigo do squad, preservado
+somente leitura na prática — **nunca** empurre nada para lá.
+
+### Confira o remote antes de todo push
+
+O container reconfigura `origin` para `Caakari/TrueCompass` a cada reinício.
+Isso já aconteceu duas vezes. Antes de empurrar:
+
+```bash
+git remote get-url origin        # tem de ser Cm-Kauan/Prototipo-TrueCompass
+git remote set-url origin https://github.com/Cm-Kauan/Prototipo-TrueCompass.git
+```
+
+Sem essa conferência, o commit vai para o repositório errado em silêncio.
+
+### Disciplina de commit
+
+- **Rode a suíte inteira antes de commitar.** Nada de commit com teste vermelho.
+- `git fetch origin main` antes: o Kauan e o squad também empurram aqui.
+  Divergiu, faça merge — **nunca** rebase nem force-push em branch compartilhada.
+- Branch de trabalho: `main`.
+- **Não commite artefato derivado.** `backend/dados/alt.bin` (30 MB) sai de
+  `backend/dados/malha.json` em ~12s e está no `.gitignore`. `malha.json` fica
+  versionado porque regerá-lo exige a Overpass.
+- Mensagem em português, descrevendo a decisão e o porquê — não só o quê.
+- **Não abra Pull Request** sem pedido explícito.
+- Apagar repositório, branch alheia ou reescrever histórico: **nunca**.
+
+### Sobre o hook
+
+`stop-hook-git-check.sh` avisa quando sobra coisa sem commitar. Agora isso é
+sinal legítimo: termine o trabalho e commite. Se houver motivo para deixar algo
+fora (artefato derivado, experimento), diga em uma linha por quê.
 
 ## Contexto do projeto
 
@@ -38,7 +66,7 @@ docs/        Documentacao_App/ · Documentacao_Aula/
   Railway, que precisa da RAIZ do repositório por causa de `matematica/`).
   `requirements.txt` da raiz só faz `-r backend/requirements.txt`.
 
-Camada de algoritmos em `matematica/algoritmos/`:
+Camada de algoritmos em `matematica/algoritmos/` (matemática pura, sem FastAPI nem SQL):
 
 - `grafo.py` — malha viária como grafo ponderado direcionado, grafo reverso
   com cache, heurística haversine
@@ -48,6 +76,8 @@ Camada de algoritmos em `matematica/algoritmos/`:
 - `topologica.py` — algoritmo de Kahn (genérico)
 - `matriz_mapa.py` — mapa como **matriz de células** → grafo; fonte de autoria
 - `semaforo.py` — atraso esperado `E[espera] = r²/(2c)`
+- `alt.py` — A* + Landmarks + desigualdade Triangular; heurística 14× mais
+  apertada que a haversine na malha real
 - `indice_espacial.py` — `IndiceLinear`, mantido como **oráculo** da quadtree
 - `EXPLICACAO.md` — guia didático dos algoritmos
 - `MATEMATICA.md` — guia didático das fórmulas (companheiro do acima)
@@ -59,6 +89,7 @@ Camada de infraestrutura em `backend/infra/` (rede e disco; `algoritmos/` NUNCA 
   fortemente conexo, serialização do artefato
 - `importar_malha.py` — CLI: roda uma vez offline e gera `backend/dados/malha.json`
   (versionado: Pinheiros → Tatuapé, Santana → Ipiranga; 118 mil nós, 3,5 mil semáforos)
+- `preparar_alt.py` — CLI: gera `backend/dados/alt.bin` com os marcos do ALT
 - `geocodificacao.py` — busca de lugares: Photon ao digitar, Nominatim só no Enter
 - `backend/tests/test_osm.py` — 23 testes, rodam sem rede (fixture embutido)
 
@@ -74,7 +105,7 @@ Camada HTTP em `backend/api/` (FastAPI):
 - `rotas/` — auth, motoristas, corridas, malha, lugares, viagens, ws · `conexoes.py` — WebSocket
 - `eventos.py` — mensagens do WS e `comitar_e_publicar`
 - `backend/tests/`: `test_estados.py` (18), `test_api.py` (37), `test_ws.py` (14)
-- `matematica/tests/`: `test_matriz.py` (29) — matriz e semáforos; `test_quadtree.py` (20)
+- `matematica/tests/`: `test_matriz.py` (29) — matriz e semáforos; `test_quadtree.py` (20); `test_alt.py` (23)
 
 Front-end ATUAL em `frontend/app/` (React + TypeScript + Vite, porta 5180) — ver `frontend/app/README.md`:
 
@@ -183,6 +214,25 @@ Decisões do front-end:
   do haversine.
 - A rotação da agulha é **acumulada**: de 350° para 10° ela gira +20°, não
   −340°. Sem isso a animação volta pelo caminho longo.
+
+Decisões do ALT:
+
+- Na malha real de SP o A* com haversine ganha só **1,37×** do Dijkstra: o
+  `v_max` de 110 km/h é imposto por 8 arestas de marginal, e a rua mediana tem
+  30 km/h. Com ALT o ganho vai a **14,3×** (157 ms → 16 ms por rota).
+- As tabelas são **float64, nunca float32**. Medido: com float32 o limite supera
+  o custo real em 2e-6 relativo, porque a admissibilidade depende de uma
+  SUBTRAÇÃO e a diferença herda o arredondamento das duas pontas.
+- `d(v, L)` vem de busca no grafo **reverso** — a dualidade da Proposição C.7,
+  a mesma já usada no pareamento.
+- Marcos na **periferia**, por seleção do ponto mais distante. Marco no centro
+  fica "entre" origem e destino e seu limite vira quase zero.
+- **Marcos ativos**: avaliar 16 marcos por chamada de `h` custa caro em Python
+  e anularia o ganho. Na consulta escolhemos os 4 melhores para aquele par.
+- O artefato carrega **impressão digital** do conjunto de vértices, conferida
+  no boot. Sem ela, um `alt.bin` de outra malha seria usado em silêncio e o A*
+  devolveria rota subótima sem erro algum.
+- Sem `backend/dados/alt.bin` o sistema **continua correto**, caindo na haversine.
 
 - Pesos do grafo são **tempo em segundos**, não distância.
 - A heurística do A* precisa ser dividida pela velocidade máxima para continuar
