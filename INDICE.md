@@ -68,6 +68,7 @@ servidor e sem rede. O backend acha a pasta `matematica/` sozinho
 | `topologica.py` | algoritmo de Kahn |
 | `matriz_mapa.py` | mapa como matriz de células → grafo |
 | `semaforo.py` | atraso esperado em cruzamento semaforizado, r²/2c |
+| `contracao.py` | contração de nós de passagem; `Geometria` guarda a forma das ruas |
 | `alt.py` | A\* + Landmarks + desigualdade Triangular: heurística 14× mais apertada na malha real |
 | `cidade_exemplo.py` | cidade sintética (mão única, avenidas, rio com 2 pontes) |
 | `demo.py` | comparativo medido — `cd matematica && python3 -m algoritmos.demo` |
@@ -117,27 +118,28 @@ matriz, suba com `MALHA_ARQUIVO=` (vazio). O grafo é derivado dela no boot.
 | Arquivo | O que faz |
 |---|---|
 | `osm.py` | Overpass API, parser OSM, semáforos, poda ao componente fortemente conexo |
-| `importar_malha.py` | CLI: gera `backend/dados/malha.json` uma vez, offline |
+| `importar_malha.py` | CLI: gera `backend/dados/malha.json.gz` (município de SP, contraído) uma vez, offline |
 | `preparar_alt.py` | CLI: gera `backend/dados/alt.bin` (marcos do ALT), derivado da malha |
 | `geocodificacao.py` | busca de lugares, com cache e limite de taxa |
 | `modelos.py` · `banco.py` | tabelas SQLAlchemy e sessão |
 | `seguranca.py` | bcrypt e JWT |
 | `config.py` | configuração via ambiente (caminhos relativos partem de `backend/`) |
 
-## Testes — 183, sem pytest
+## Testes — 205, sem pytest
 
 ```bash
-for t in algoritmos quadtree matriz alt; do python3 matematica/tests/test_$t.py; done
+for t in algoritmos quadtree matriz alt contracao; do python3 matematica/tests/test_$t.py; done
 for t in osm estados api ws;        do python3 backend/tests/test_$t.py; done
 ```
 
 | Arquivo | Qtd | Cobre |
 |---|---:|---|
 | `matematica/tests/test_algoritmos.py` | 19 | Dijkstra, A\*, pareamento reverso, velocidade máxima medida |
-| `matematica/tests/test_quadtree.py` | 20 | índice espacial, poda, casos degenerados |
+| `matematica/tests/test_quadtree.py` | 23 | índice espacial, poda, janela retangular, casos degenerados |
 | `matematica/tests/test_matriz.py` | 29 | matriz do mapa, semáforos, mapa de produção |
 | `matematica/tests/test_alt.py` | 23 | ALT: admissibilidade, consistência, artefato, impressão digital |
-| `backend/tests/test_osm.py` | 23 | parser OSM, mão única, semáforos, poda (sem rede) |
+| `matematica/tests/test_contracao.py` | 14 | contração: oráculo Dijkstra, mão única, semáforo, corte de 250 m, traçado |
+| `backend/tests/test_osm.py` | 28 | parser OSM, mão única, semáforos, poda, blocos, artefato .gz (sem rede) |
 | `backend/tests/test_estados.py` | 18 | Kahn, DAG, transições proibidas |
 | `backend/tests/test_api.py` | 37 | ciclo via HTTP, auth, concorrência, malha, prévia, lugares |
 | `backend/tests/test_ws.py` | 14 | tempo real, isolamento entre corridas |

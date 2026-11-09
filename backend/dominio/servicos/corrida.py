@@ -11,6 +11,7 @@ import time
 from sqlalchemy import update
 
 from algoritmos.busca import busca_caminho_minimo, reconstruir_caminho
+from algoritmos.contracao import Geometria
 from algoritmos.grafo import haversine, heuristica_haversine
 from algoritmos.matching import motoristas_mais_proximos
 from dominio import estados as E
@@ -69,11 +70,21 @@ def calcular_rota(grafo, no_origem, no_destino, alt=None):
             reconstruir_caminho(resultado.anterior, no_origem, no_destino))
 
 
-def comprimento_metros(grafo, caminho):
-    return sum(
-        haversine(*grafo.coordenadas(a), *grafo.coordenadas(b))
-        for a, b in zip(caminho, caminho[1:])
-    )
+SEM_GEOMETRIA = Geometria()
+
+
+def tracado(grafo, caminho, geometria=None):
+    """Polilinha para o mapa: cruzamentos E a forma das ruas entre eles.
+
+    A malha e contraida (so cruzamentos viram nos); sem a geometria, a rota
+    seria desenhada cortando quarteiroes em linha reta a cada curva.
+    """
+    return (geometria or SEM_GEOMETRIA).tracado(grafo, caminho)
+
+
+def comprimento_metros(grafo, caminho, geometria=None):
+    """Metros pelo tracado real -- e o que a tarifa por km cobra."""
+    return (geometria or SEM_GEOMETRIA).comprimento_m(grafo, caminho)
 
 
 def estimar_custo(segundos, metros):
@@ -113,7 +124,7 @@ def passo_comum(*resultados, maximo=MAXIMO_PONTOS_EXPLORACAO):
 
 def estimar_viagem(grafo, indice_nos, origem, destino, *, registro=None,
                    config=None, semaforos=frozenset(), comparar=False,
-                   explorar=False):
+                   explorar=False, geometria=None, alt=None):
     """Previa da viagem, ANTES de pedir: rota, tempo, distancia e preco.
 
     `origem`/`destino` sao (lat, lon) do endereco escolhido. Cada um e
@@ -138,8 +149,9 @@ def estimar_viagem(grafo, indice_nos, origem, destino, *, registro=None,
     if no_origem == no_destino:
         segundos, caminho, expandidos = 0.0, [no_origem], 0
     else:
-        resultado = busca_caminho_minimo(grafo, no_origem, {no_destino},
-                                         h=heuristica_haversine(grafo, no_destino))
+        heuristica = (alt.heuristica(no_destino, origem=no_origem) if alt
+                      else heuristica_haversine(grafo, no_destino))
+        resultado = busca_caminho_minimo(grafo, no_origem, {no_destino}, h=heuristica)
         if no_destino not in resultado.custos:
             raise DestinoInalcancavel(f"sem rota de {no_origem} ate {no_destino}")
         segundos = resultado.custos[no_destino]
@@ -147,8 +159,8 @@ def estimar_viagem(grafo, indice_nos, origem, destino, *, registro=None,
         expandidos = resultado.nos_expandidos
     ms_a_estrela = (time.perf_counter() - inicio) * 1000
 
-    metros = comprimento_metros(grafo, caminho)
-    pontos = [grafo.coordenadas(no) for no in caminho]
+    metros = comprimento_metros(grafo, caminho, geometria)
+    pontos = tracado(grafo, caminho, geometria)
     saida = {
         "segundos": segundos,
         "metros": metros,
@@ -163,6 +175,7 @@ def estimar_viagem(grafo, indice_nos, origem, destino, *, registro=None,
         },
         "algoritmo": {
             "a_estrela": {"nos_expandidos": expandidos, "ms": round(ms_a_estrela, 1)},
+            "heuristica": "alt" if alt else "haversine",
             "velocidade_max_kmh": round(grafo.velocidade_maxima_kmh(), 1),
             "nos_na_malha": len(grafo.nos),
         },
@@ -188,7 +201,7 @@ def estimar_viagem(grafo, indice_nos, origem, destino, *, registro=None,
             saida["exploracao"]["dijkstra"] = ordem_de_descoberta(grafo, oraculo, passo)
 
     if registro is not None and config is not None:
-        lat, lon = pontos[0]
+        lat, lon = grafo.coordenadas(no_origem)
         candidatos = registro.candidatos(lat, lon, config.raio_busca_m,
                                          config.max_candidatos)
         ranking = motoristas_mais_proximos(

@@ -29,9 +29,10 @@ Não precisa de pytest, banco nem rede — cada arquivo roda sozinho:
 
 ```bash
 python3 matematica/tests/test_algoritmos.py   # 19 — Dijkstra, A*, pareamento reverso
-python3 matematica/tests/test_quadtree.py     # 20 — índice espacial
+python3 matematica/tests/test_quadtree.py     # 23 — índice espacial
+python3 matematica/tests/test_contracao.py    # 14 — contração da malha
 python3 matematica/tests/test_matriz.py       # 29 — matriz do mapa e semáforos
-python3 backend/tests/test_osm.py             # 23 — parser OpenStreetMap
+python3 backend/tests/test_osm.py             # 28 — parser OpenStreetMap
 python3 backend/tests/test_estados.py         # 18 — Kahn e DAG da corrida
 python3 backend/tests/test_api.py             # 37 — ciclo completo via HTTP
 python3 backend/tests/test_ws.py              # 14 — tempo real
@@ -66,7 +67,7 @@ uvicorn --app-dir backend api.main:app --reload
   os endpoints pelo navegador, sem Postman
 - Saúde: http://127.0.0.1:8000/saude
 
-O servidor carrega, nesta ordem: a malha real (`backend/dados/malha.json`), o
+O servidor carrega, nesta ordem: a malha real (`backend/dados/malha.json.gz`), o
 mapa em matriz (`matematica/mapas/centro.mapa`) ou, sem nenhum dos dois, a
 cidade sintética. Os caminhos funcionam de qualquer pasta de onde ele for
 iniciado. Para usar a matriz com a malha presente: `MALHA_ARQUIVO=` (vazio).
@@ -87,13 +88,24 @@ O front anterior continua em `frontend/web` (`npm run dev`, porta 5173).
 
 ```bash
 cd backend
-python3 -m infra.importar_malha --sul -23.615 --oeste -46.705 \
-                                --norte -23.505 --leste -46.545
+python3 -m infra.importar_malha                # município de São Paulo inteiro
 ```
 
-Roda **uma vez**, offline, e gera `backend/dados/malha.json` (versionado). O
+Roda **uma vez**, offline, e gera `backend/dados/malha.json.gz` (versionado). O
 servidor lê esse arquivo no boot — nunca consulta a Overpass em produção.
-Caixas grandes demoram e a Overpass pode recusar; comece por um bairro.
+
+A cidade é baixada em 12 blocos, cada um recortado pelo limite do município
+(relação 298285 do OSM), com cache por bloco em `backend/dados/osm_bruto/`: se
+um bloco falhar, rodar de novo não baixa os outros. Depois da poda ao
+componente fortemente conexo, os nós de passagem são **contraídos** (ver
+`matematica/algoritmos/contracao.py`).
+
+Outras formas:
+
+```bash
+python3 -m infra.importar_malha --sul -23.56 --oeste -46.66 --norte -23.54 --leste -46.63
+python3 -m infra.importar_malha --reprocessar dados/malha.json   # sem rede: só contrai
+```
 
 ## Acelerar o cálculo de rota (ALT)
 
@@ -104,7 +116,7 @@ cd backend
 python3 -m infra.preparar_alt --marcos 16
 ```
 
-Roda uma vez (~12 s na malha de São Paulo) e grava `backend/dados/alt.bin` (~30 MB).
+Roda uma vez (segundos, na malha contraída) e grava `backend/dados/alt.bin`.
 O servidor carrega no boot e o cálculo de rota fica **14× mais rápido** —
 157 ms para 16 ms por rota.
 

@@ -47,6 +47,11 @@ class IndiceLinear:
             encontrados = encontrados[:limite]
         return [identificador for _, identificador in encontrados]
 
+    def no_retangulo(self, sul, oeste, norte, leste):
+        """Todos os pontos dentro do retangulo, por varredura."""
+        return [i for i, (lat, lon) in self._pontos.items()
+                if sul <= lat <= norte and oeste <= lon <= leste]
+
     def mais_proximo(self, lat, lon):
         """Um unico ponto: usado para ancorar coordenada GPS ao cruzamento."""
         if not self._pontos:

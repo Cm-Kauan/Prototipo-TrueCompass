@@ -10,7 +10,7 @@ ficaria parada. Com `def`, o FastAPI os executa num threadpool.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from api.deps import (config, obter_alt, obter_conexoes, obter_grafo,
+from api.deps import (config, obter_alt, obter_conexoes, obter_geometria, obter_grafo,
                       obter_indice_nos, obter_registro, usuario_atual)
 from api.esquemas import CorridaEntrada, CorridaSaida, RotaSaida
 from api.eventos import comitar_e_publicar
@@ -116,7 +116,7 @@ def consultar(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
 @rotas.get("/{corrida_id}/rota", response_model=RotaSaida)
 def obter_rota(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
                sessao: Session = Depends(obter_sessao), grafo=Depends(obter_grafo),
-               alt=Depends(obter_alt)):
+               alt=Depends(obter_alt), geometria=Depends(obter_geometria)):
     """Traçado para o Leaflet desenhar. A* com heuristica haversine."""
     corrida = _carregar(sessao, corrida_id, usuario)
     try:
@@ -125,8 +125,8 @@ def obter_rota(corrida_id: int, usuario: Usuario = Depends(usuario_atual),
     except servico.DestinoInalcancavel as erro:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(erro))
     return RotaSaida(segundos=segundos,
-                     metros=servico.comprimento_metros(grafo, caminho),
-                     pontos=[grafo.coordenadas(no) for no in caminho])
+                     metros=servico.comprimento_metros(grafo, caminho, geometria),
+                     pontos=servico.tracado(grafo, caminho, geometria))
 
 
 @rotas.get("/{corrida_id}/rota-motorista", response_model=RotaSaida)
@@ -134,7 +134,8 @@ def obter_rota_do_motorista(corrida_id: int,
                             usuario: Usuario = Depends(usuario_atual),
                             sessao: Session = Depends(obter_sessao),
                             grafo=Depends(obter_grafo),
-                            alt=Depends(obter_alt)):
+                            alt=Depends(obter_alt),
+                            geometria=Depends(obter_geometria)):
     """Trajeto do motorista ate o passageiro, sobre as ruas.
 
     Alvo unico, portanto A* com heuristica. Calculado sob demanda a partir da
@@ -156,8 +157,8 @@ def obter_rota_do_motorista(corrida_id: int,
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(erro))
 
     return RotaSaida(segundos=segundos,
-                     metros=servico.comprimento_metros(grafo, caminho),
-                     pontos=[grafo.coordenadas(no) for no in caminho])
+                     metros=servico.comprimento_metros(grafo, caminho, geometria),
+                     pontos=servico.tracado(grafo, caminho, geometria))
 
 
 @rotas.post("/{corrida_id}/iniciar", response_model=CorridaSaida)

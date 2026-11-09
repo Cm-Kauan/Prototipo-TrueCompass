@@ -57,6 +57,29 @@ def test_mais_proximo_bate_com_a_varredura_linear():
                    - haversine(lat, lon, *pontos[esperado])) < 1e-9
 
 
+def test_no_retangulo_bate_com_a_varredura_linear():
+    pontos = pontos_aleatorios(2000, semente=17)
+    arvore, linear = Quadtree(pontos), IndiceLinear(pontos)
+    rng = random.Random(31)
+    for _ in range(200):
+        sul = LAT0 + rng.uniform(-0.01, EXTENSAO)
+        oeste = LON0 + rng.uniform(-0.01, EXTENSAO)
+        norte, leste = sul + rng.uniform(0, 0.03), oeste + rng.uniform(0, 0.03)
+        assert sorted(arvore.no_retangulo(sul, oeste, norte, leste)) == \
+            sorted(linear.no_retangulo(sul, oeste, norte, leste))
+
+
+def test_janela_pequena_visita_uma_fracao_da_arvore():
+    pontos = pontos_aleatorios(5000, semente=19)
+    arvore = Quadtree(pontos)
+    arvore.no_retangulo(LAT0 + 0.02, LON0 + 0.02, LAT0 + 0.025, LON0 + 0.025)
+    assert arvore.nos_visitados < arvore.total_nos() / 5
+
+
+def test_no_retangulo_em_arvore_vazia():
+    assert Quadtree().no_retangulo(-90, -180, 90, 180) == []
+
+
 def test_consulta_fora_da_area_nao_inventa_resultado():
     pontos = pontos_aleatorios(500)
     arvore, linear = Quadtree(pontos), IndiceLinear(pontos)

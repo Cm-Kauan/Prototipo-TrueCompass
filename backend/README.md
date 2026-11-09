@@ -8,7 +8,7 @@ real. Usa os algoritmos de `../matematica/` (ligação em `matematica_no_caminho
 | `api/` | HTTP e WebSocket |
 | `dominio/` | regras de negócio: DAG da corrida, pareamento, prévia da viagem |
 | `infra/` | banco, OpenStreetMap, busca de lugares, segredos |
-| `dados/` | `malha.json` — ruas reais de São Paulo, lidas no boot |
+| `dados/` | `malha.json.gz` — ruas reais de São Paulo (contraídas), lidas no boot |
 | `tests/` | 92 testes, sem pytest |
 
 Da raiz do repositório:

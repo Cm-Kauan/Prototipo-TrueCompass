@@ -9,9 +9,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from algoritmos.contracao import Geometria
 from algoritmos.indice_espacial import indice_dos_nos
 from api.conexoes import GerenciadorConexoes
 from api.rotas import auth, corridas, lugares, malha, motoristas, viagens, ws
+from api.rotas.malha import resumo_da_malha
 from dominio.estados import validar_dag
 from dominio.registro import RegistroMotoristas
 from infra.banco import criar_tabelas
@@ -25,7 +27,7 @@ registrador = logging.getLogger("truecompass")
 def carregar_malha(config):
     """Decide a fonte do mapa, nesta ordem de preferencia.
 
-    1. Artefato do OpenStreetMap (`dados/malha.json`), gerado offline pelo
+    1. Artefato do OpenStreetMap (`dados/malha.json.gz`), gerado offline pelo
        CLI -- ruas REAIS de Sao Paulo, com mao unica e semaforos do OSM. E o
        que permite buscar um endereco de verdade e rotear ate ele.
     2. MATRIZ (`mapas/*.mapa`) -- editavel a mao, boa para experimentos
@@ -35,17 +37,20 @@ def carregar_malha(config):
     O servidor NUNCA consulta a Overpass no boot: seria lento, fragil e abuso
     de um servico publico.
 
-    Devolve (grafo, matriz_ou_None, semaforos). Os semaforos vao a parte
-    porque o grafo nao os carrega -- o atraso ja foi absorvido pelos pesos
-    das arestas; a lista serve para o front desenhar.
+    Devolve (grafo, matriz_ou_None, semaforos, geometria). Os semaforos vao a
+    parte porque o grafo nao os carrega -- o atraso ja foi absorvido pelos
+    pesos das arestas; a lista serve para o front desenhar. A geometria e a
+    forma das ruas contraidas (vazia na matriz e na cidade sintetica, onde
+    toda aresta ja e reta).
     """
     if config.arquivo_malha and os.path.exists(config.arquivo_malha):
         from infra.osm import ler_artefato
-        grafo, semaforos = ler_artefato(config.arquivo_malha)
-        registrador.info("malha do OpenStreetMap: %s (%d nos, %d arestas, %d semaforos)",
+        grafo, semaforos, geometria = ler_artefato(config.arquivo_malha)
+        registrador.info("malha do OpenStreetMap: %s (%d nos, %d arestas, %d semaforos, "
+                         "%d arestas com tracado)",
                          config.arquivo_malha, len(grafo.nos), grafo.total_arestas(),
-                         len(semaforos))
-        return grafo, None, semaforos
+                         len(semaforos), len(geometria))
+        return grafo, None, semaforos, geometria
 
     if config.arquivo_matriz and os.path.exists(config.arquivo_matriz):
         from algoritmos.matriz_mapa import MatrizMapa
@@ -59,14 +64,14 @@ def carregar_malha(config):
             len(grafo.nos), grafo.total_arestas(), dados["semaforos"],
             "" if config.considerar_semaforos else " IGNORADOS",
         )
-        return grafo, matriz, semaforos_da_matriz(matriz)
+        return grafo, matriz, semaforos_da_matriz(matriz), Geometria()
 
     from algoritmos.cidade_exemplo import construir_cidade
     registrador.warning(
         "nem %s nem %s encontrados: subindo com a CIDADE SINTETICA.",
         config.arquivo_malha, config.arquivo_matriz,
     )
-    return construir_cidade(lado=40), None, []
+    return construir_cidade(lado=40), None, [], Geometria()
 
 
 def semaforos_da_matriz(matriz):
@@ -141,10 +146,12 @@ async def ciclo_de_vida(app: FastAPI):
     #    pelo tempo de vida do processo. Reconstruir por requisicao seria
     #    inviavel -- e e por isso que este backend precisa de processo
     #    persistente (Railway), e nao de funcoes serverless.
-    app.state.grafo, app.state.matriz, app.state.semaforos = carregar_malha(config)
+    (app.state.grafo, app.state.matriz, app.state.semaforos,
+     app.state.geometria) = carregar_malha(config)
     app.state.grafo.reverso()
     app.state.indice_nos = indice_dos_nos(app.state.grafo)
     app.state.caixa = caixa_da_malha(app.state.grafo)
+    app.state.resumo_malha = resumo_da_malha(app.state.grafo)
     # Cruzamentos semaforizados, para contar os sinais de cada rota.
     app.state.nos_semaforizados = frozenset(
         app.state.indice_nos.mais_proximo(s["lat"], s["lon"])

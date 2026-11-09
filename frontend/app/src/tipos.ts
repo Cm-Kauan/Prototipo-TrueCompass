@@ -68,6 +68,8 @@ export interface Estimativa {
   algoritmo: {
     a_estrela: ResultadoAlgoritmo
     dijkstra?: ResultadoAlgoritmo & { mesmo_custo: boolean }
+    /** 'alt' quando o backend tem os marcos pré-calculados; senão, linha reta. */
+    heuristica?: 'alt' | 'haversine'
     velocidade_max_kmh: number
     nos_na_malha: number
   }

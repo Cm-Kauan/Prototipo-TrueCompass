@@ -196,6 +196,33 @@ class Quadtree:
             encontrados = encontrados[:limite]
         return [identificador for _, identificador in encontrados]
 
+    def no_retangulo(self, sul, oeste, norte, leste):
+        """Todos os pontos dentro do retangulo (a area visivel do mapa).
+
+        Mesma poda de `proximos`, agora por intersecao de retangulos: ramo
+        que nao toca a janela e descartado inteiro. Sem isso, cada movimento
+        do mapa varria a malha toda -- O(V) por requisicao, que na cidade
+        inteira travaria o servidor a cada arrastar de dedo.
+        """
+        self.nos_visitados = 0
+        encontrados = []
+        if self._raiz is None:
+            return encontrados
+        pilha = [self._raiz]
+        while pilha:
+            no = pilha.pop()
+            self.nos_visitados += 1
+            r = no.retangulo
+            if r.lat_max < sul or r.lat_min > norte or r.lon_max < oeste or r.lon_min > leste:
+                continue
+            if no.e_folha:
+                encontrados.extend(
+                    identificador for identificador, (lat, lon) in no.pontos.items()
+                    if sul <= lat <= norte and oeste <= lon <= leste)
+            else:
+                pilha.extend(no.filhos)
+        return encontrados
+
     def mais_proximo(self, lat, lon):
         """Vizinho mais proximo, por busca best-first com poda.
 

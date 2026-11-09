@@ -10,7 +10,7 @@ distancia e preco -- calculado pelo MESMO A* que o pedido usara depois.
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from api.deps import (config, obter_grafo, obter_indice_nos,
+from api.deps import (config, obter_alt, obter_geometria, obter_grafo, obter_indice_nos,
                       obter_nos_semaforizados, obter_registro, usuario_atual)
 from dominio.servicos import corrida as servico
 
@@ -35,6 +35,8 @@ def estimativa(dados: EstimativaEntrada,
                indice_nos=Depends(obter_indice_nos),
                registro=Depends(obter_registro),
                semaforos=Depends(obter_nos_semaforizados),
+               geometria=Depends(obter_geometria),
+               alt=Depends(obter_alt),
                cfg=Depends(config)):
     try:
         return servico.estimar_viagem(
@@ -43,6 +45,7 @@ def estimativa(dados: EstimativaEntrada,
             (dados.destino_lat, dados.destino_lon),
             registro=registro, config=cfg, semaforos=semaforos,
             comparar=dados.comparar, explorar=dados.explorar,
+            geometria=geometria, alt=alt,
         )
     except servico.DestinoInalcancavel as erro:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(erro))

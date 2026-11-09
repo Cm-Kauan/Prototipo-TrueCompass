@@ -18,7 +18,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import matematica_no_caminho  # noqa: E402,F401  -- pacote `algoritmos`, em ../matematica
 
 from algoritmos.grafo import haversine
-from infra.osm import (SEMAFORO_OSM, VELOCIDADE_PADRAO, _sentidos,
+from algoritmos.busca import busca_caminho_minimo
+from algoritmos.contracao import contrair
+from infra.osm import (AREA_MUNICIPIO_SP, SEMAFORO_OSM, VELOCIDADE_PADRAO, _sentidos, blocos,
+                       juntar_extratos,
                        _velocidade_kmh, carregar_grafo, construir_grafo,
                        ler_artefato, maior_componente_fortemente_conexo,
                        montar_consulta, salvar_grafo, semaforos_do_osm)
@@ -210,7 +213,7 @@ def test_artefato_leva_os_semaforos_que_sobreviveram_a_poda():
     with tempfile.TemporaryDirectory() as pasta:
         caminho = os.path.join(pasta, "malha.json")
         salvar_grafo(podado, caminho, semaforos=semaforos_do_osm(dados))
-        _grafo, semaforos = ler_artefato(caminho)
+        _grafo, semaforos, _geo = ler_artefato(caminho)
     assert [(s["lat"], s["lon"]) for s in semaforos] == [COORD[2]]
     assert isclose(semaforos[0]["atraso_medio"], round(SEMAFORO_OSM.atraso, 2))
 
@@ -219,7 +222,7 @@ def test_artefato_antigo_sem_semaforos_ainda_carrega():
     with tempfile.TemporaryDirectory() as pasta:
         caminho = os.path.join(pasta, "malha.json")
         salvar_grafo(grafo_bruto(), caminho)
-        grafo, semaforos = ler_artefato(caminho)
+        grafo, semaforos, _geo = ler_artefato(caminho)
     assert semaforos == [] and len(grafo.nos) == len(grafo_bruto().nos)
 
 
@@ -233,6 +236,67 @@ def test_consulta_overpass_tem_caixa_e_filtro():
 
 
 # ---------------------------------------------------------------------------
+
+def test_consulta_com_area_recorta_pelo_municipio():
+    consulta = montar_consulta(-23.56, -46.65, -23.54, -46.63, area=AREA_MUNICIPIO_SP)
+    assert f"area(id:{AREA_MUNICIPIO_SP})->.alvo;" in consulta
+    assert "(area.alvo)(-23.56,-46.65,-23.54,-46.63)" in consulta
+
+
+def test_blocos_cobrem_a_caixa_sem_buraco():
+    lista = blocos(-24.0, -46.8, -23.4, -46.4, 4, 3)
+    assert len(lista) == 12
+    assert min(b[0] for b in lista) == -24.0 and max(b[2] for b in lista) == -23.4
+    assert min(b[1] for b in lista) == -46.8 and max(b[3] for b in lista) == -46.4
+    area = sum((n - s_) * (l - o) for s_, o, n, l in lista)
+    assert isclose(area, 0.6 * 0.4, rel_tol=1e-6)
+
+
+def test_juntar_extratos_nao_duplica_rua_da_fronteira():
+    a = {"elements": [{"type": "node", "id": 1, "lat": 0, "lon": 0},
+                      {"type": "way", "id": 9, "nodes": [1, 2]}]}
+    b = {"elements": [{"type": "node", "id": 2, "lat": 0, "lon": 1},
+                      {"type": "way", "id": 9, "nodes": [1, 2]}]}
+    juntos = juntar_extratos([a, b])["elements"]
+    assert sorted((e["type"], e["id"]) for e in juntos) == [("node", 1), ("node", 2), ("way", 9)]
+
+
+def test_artefato_comprimido_com_geometria_preserva_rotas_e_tracado():
+    """Grava contraido em .gz, le de volta: mesmos custos e mesmo desenho."""
+    grafo = maior_componente_fortemente_conexo(grafo_bruto())
+    contraido, geometria = contrair(grafo, limite_m=10_000)
+    with tempfile.TemporaryDirectory() as pasta:
+        caminho = os.path.join(pasta, "malha.json.gz")
+        salvar_grafo(contraido, caminho, geometria=geometria)
+        with open(caminho, "rb") as bruto:
+            assert bruto.read(2) == b"\x1f\x8b", "tem de sair comprimido"
+        lido, _semaforos, geo_lida = ler_artefato(caminho)
+    assert set(lido.nos) == set(contraido.nos)
+    for u in contraido.nos:
+        for v, p in contraido.vizinhos(u):
+            assert isclose(peso(lido, u, v), p, abs_tol=1e-3)
+            for (a, b), (c, d) in zip(geo_lida.intermediarios(u, v),
+                                      geometria.intermediarios(u, v)):
+                assert isclose(a, c, abs_tol=1e-6) and isclose(b, d, abs_tol=1e-6)
+            assert len(geo_lida.intermediarios(u, v)) == len(geometria.intermediarios(u, v))
+            assert geo_lida.mesmo_tracado(u, v) == geometria.mesmo_tracado(u, v)
+    origem = next(iter(grafo.nos))
+    esperado = busca_caminho_minimo(grafo, origem, alvos=set()).distancias
+    obtido = busca_caminho_minimo(lido, origem, alvos=set()).distancias
+    for no, custo in obtido.items():
+        assert isclose(custo, esperado[no], abs_tol=1e-2)
+
+
+def test_gz_e_deterministico():
+    """Mesmo grafo, mesmos bytes: o git nao ve mudanca onde nao houve."""
+    grafo = maior_componente_fortemente_conexo(grafo_bruto())
+    with tempfile.TemporaryDirectory() as pasta:
+        a, b = os.path.join(pasta, "a.json.gz"), os.path.join(pasta, "b.json.gz")
+        salvar_grafo(grafo, a)
+        salvar_grafo(grafo, b)
+        with open(a, "rb") as x, open(b, "rb") as y:
+            assert x.read() == y.read()
+
 
 def main():
     testes = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

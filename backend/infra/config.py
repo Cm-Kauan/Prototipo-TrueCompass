@@ -36,7 +36,7 @@ class Config:
         )
         self.segredo_jwt = os.getenv("JWT_SECRET", "")
         self.horas_token = int(os.getenv("JWT_HORAS", "12"))
-        self.arquivo_malha = _caminho("MALHA_ARQUIVO", "dados/malha.json")
+        self.arquivo_malha = _caminho("MALHA_ARQUIVO", "dados/malha.json.gz")
         # Mapa em matriz: fonte preferencial, por ser editavel e versionavel.
         self.arquivo_matriz = _caminho("MAPA_MATRIZ", os.path.join(PASTA_MATEMATICA, "mapas", "centro.mapa"))
         self.considerar_semaforos = os.getenv("SEMAFOROS", "1") not in ("0", "false")

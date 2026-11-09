@@ -136,7 +136,7 @@ export function PinoCentral({ movendo, tipo, base }: { movendo: boolean; tipo: '
 export const ETAPAS: { chave: EstadoCorrida; nome: string; nota: string }[] = [
   { chave: 'pedido', nome: 'Pedido', nota: 'registrado' },
   { chave: 'alocacao', nome: 'Motorista', nota: 'busca reversa no grafo' },
-  { chave: 'rota', nome: 'Rota', nota: 'A* com heurística haversine' },
+  { chave: 'rota', nome: 'Rota', nota: 'A* com marcos (ALT)' },
   { chave: 'em_curso', nome: 'Viagem', nota: 'em andamento' },
   { chave: 'concluida', nome: 'Chegada', nota: 'concluída' },
   { chave: 'paga', nome: 'Pago', nota: 'só a partir de concluída' },
@@ -214,8 +214,13 @@ export function DetalhesAlgoritmo({ estimativa, aoComparar }: { estimativa: Esti
             <p>
               A* sobre <b>{milhar(estimativa.algoritmo.nos_na_malha)}</b> cruzamentos reais do OpenStreetMap.
               Peso de cada rua = tempo de percurso + espera esperada nos semáforos
-              (<span className="mono">r²/2c</span>). Heurística: linha reta ÷ {estimativa.algoritmo.velocidade_max_kmh} km/h,
-              a maior velocidade medida na malha — por isso nunca superestima.
+              (<span className="mono">r²/2c</span>).{' '}
+              {estimativa.algoritmo.heuristica === 'alt'
+                ? <>Heurística ALT: distâncias pré-calculadas até marcos na periferia da cidade e a
+                    desigualdade triangular, <span className="mono">|d(L,t) − d(L,v)|</span> — nunca superestima,
+                    e aponta o A* ao destino muito melhor que a linha reta.</>
+                : <>Heurística: linha reta ÷ {estimativa.algoritmo.velocidade_max_kmh} km/h,
+                    a maior velocidade medida na malha — por isso nunca superestima.</>}
             </p>
             <Barra rotulo="A*" valor={a.nos_expandidos} maior={maior} ms={a.ms} classe="a-estrela" />
             {d && <Barra rotulo="Dijkstra" valor={d.nos_expandidos} maior={maior} ms={d.ms} classe="dijkstra" atraso={0.18} />}

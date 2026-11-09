@@ -24,6 +24,11 @@ def obter_indice_nos(conexao: HTTPConnection):
     return conexao.app.state.indice_nos
 
 
+def obter_geometria(conexao: HTTPConnection):
+    """Forma das ruas contraidas (vazia quando a malha nao foi contraida)."""
+    return getattr(conexao.app.state, "geometria", None)
+
+
 def obter_alt(conexao: HTTPConnection):
     """Marcos pre-calculados do ALT, ou None se o artefato nao existir."""
     return getattr(conexao.app.state, "alt", None)

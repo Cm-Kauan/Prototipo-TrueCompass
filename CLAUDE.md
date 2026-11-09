@@ -29,9 +29,10 @@ Sem essa conferência, o commit vai para o repositório errado em silêncio.
 - `git fetch origin main` antes: o Kauan e o squad também empurram aqui.
   Divergiu, faça merge — **nunca** rebase nem force-push em branch compartilhada.
 - Branch de trabalho: `main`.
-- **Não commite artefato derivado.** `backend/dados/alt.bin` (30 MB) sai de
-  `backend/dados/malha.json` em ~12s e está no `.gitignore`. `malha.json` fica
-  versionado porque regerá-lo exige a Overpass.
+- **Não commite artefato derivado.** `backend/dados/alt.bin` sai de
+  `backend/dados/malha.json.gz` em segundos e está no `.gitignore`. `malha.json.gz`
+  fica versionado porque regerá-lo exige a Overpass. Os extratos crus
+  (`backend/dados/osm_bruto/`) também ficam fora.
 - Mensagem em português, descrevendo a decisão e o porquê — não só o quê.
 - **Não abra Pull Request** sem pedido explícito.
 - Apagar repositório, branch alheia ou reescrever histórico: **nunca**.
@@ -76,6 +77,8 @@ Camada de algoritmos em `matematica/algoritmos/` (matemática pura, sem FastAPI 
 - `topologica.py` — algoritmo de Kahn (genérico)
 - `matriz_mapa.py` — mapa como **matriz de células** → grafo; fonte de autoria
 - `semaforo.py` — atraso esperado `E[espera] = r²/(2c)`
+- `contracao.py` — contrai nós de passagem (79% da malha OSM); `Geometria`
+  guarda a forma das ruas para desenhar e medir metros
 - `alt.py` — A* + Landmarks + desigualdade Triangular; heurística 14× mais
   apertada que a haversine na malha real
 - `indice_espacial.py` — `IndiceLinear`, mantido como **oráculo** da quadtree
@@ -87,11 +90,12 @@ Camada de infraestrutura em `backend/infra/` (rede e disco; `algoritmos/` NUNCA 
 
 - `osm.py` — Overpass API, parser OSM → `Grafo`, poda ao componente
   fortemente conexo, serialização do artefato
-- `importar_malha.py` — CLI: roda uma vez offline e gera `backend/dados/malha.json`
-  (versionado: Pinheiros → Tatuapé, Santana → Ipiranga; 118 mil nós, 3,5 mil semáforos)
+- `importar_malha.py` — CLI: roda uma vez offline e gera `backend/dados/malha.json.gz`
+  (versionado, contraído). Padrão: município de SP em 12 blocos; `--reprocessar`
+  contrai um artefato antigo sem rede
 - `preparar_alt.py` — CLI: gera `backend/dados/alt.bin` com os marcos do ALT
 - `geocodificacao.py` — busca de lugares: Photon ao digitar, Nominatim só no Enter
-- `backend/tests/test_osm.py` — 23 testes, rodam sem rede (fixture embutido)
+- `backend/tests/test_osm.py` — 28 testes, rodam sem rede (fixture embutido)
 
 Camada de domínio em `backend/dominio/` (regras, sem HTTP e sem SQL bruto):
 
@@ -105,7 +109,7 @@ Camada HTTP em `backend/api/` (FastAPI):
 - `rotas/` — auth, motoristas, corridas, malha, lugares, viagens, ws · `conexoes.py` — WebSocket
 - `eventos.py` — mensagens do WS e `comitar_e_publicar`
 - `backend/tests/`: `test_estados.py` (18), `test_api.py` (37), `test_ws.py` (14)
-- `matematica/tests/`: `test_matriz.py` (29) — matriz e semáforos; `test_quadtree.py` (20); `test_alt.py` (23)
+- `matematica/tests/`: `test_matriz.py` (29) — matriz e semáforos; `test_quadtree.py` (23); `test_alt.py` (23); `test_contracao.py` (14)
 
 Front-end ATUAL em `frontend/app/` (React + TypeScript + Vite, porta 5180) — ver `frontend/app/README.md`:
 
@@ -242,5 +246,28 @@ Decisões do ALT:
 - Malha vinda do OSM **precisa** ser podada ao componente fortemente conexo:
   extrato por caixa delimitadora sempre traz fragmentos soltos e armadilhas de
   mão única. A poda reusa o grafo reverso (passo central do Kosaraju).
-- O servidor **não** consulta a Overpass no boot. Lê `backend/dados/malha.json`, gerado
+- O servidor **não** consulta a Overpass no boot. Lê `backend/dados/malha.json.gz`, gerado
   offline pelo CLI. `dados/` não é versionado com dados de teste.
+
+Decisões da contração (malha da cidade inteira):
+
+- **79%** dos nós do OSM são de passagem (2 vizinhos, sem semáforo): só desenham a
+  curva. Cada cadeia vira UMA aresta com o peso somado — o caminho mínimo entre
+  nós mantidos é **exatamente** o mesmo (oráculo Dijkstra nos testes, inclusive na
+  malha real). Medido na malha central: 118 mil → 26,6 mil nós; estimativa de
+  rota de 620 ms → 128 ms (haversine) e ~1 ms com ALT.
+- Cadeias são partidas a cada **250 m**: a quadtree só enxerga nós, e sem o corte
+  quem pede corrida no meio de um viaduto seria ancorado a um cruzamento longe.
+- Semáforos **nunca** são contraídos: a contagem de sinais por rota e o desenho
+  se ancoram neles.
+- A heurística continua admissível sem mudança: a corda entre as pontas de uma
+  cadeia é ≤ ao comprimento dela, então nenhuma aresta contraída parece mais
+  rápida que a rua real.
+- A forma da rua fica em `Geometria` (microgaus em `array('i')`, mão dupla
+  compartilha o mesmo array). É usada para **desenhar** a rota e os trechos e
+  para **medir metros** (a tarifa cobra por km) — nunca pela busca.
+- `/malha/trechos` consulta a **quadtree** (`no_retangulo`), não varre a malha:
+  com a cidade inteira, O(V) por arrastar de mapa travaria o servidor.
+  `/malha/info` é calculado uma vez no boot.
+- O artefato `.gz` é **determinístico** (`gzip.compress(mtime=0)`): o mesmo grafo
+  gera os mesmos bytes e o git não acusa mudança à toa.
