@@ -21,3 +21,6 @@ backend/dados/alt.bin
 # O artefato da malha É versionado de proposito: o deploy no Railway precisa
 # dele no boot, e gerá-lo exigiria bater na Overpass durante o build.
 !backend/dados/malha.json
+
+# prévia do banner: artefato derivado, sai de `gerar_banner.py --previa`
+docs/banner/previa_banner.png
